@@ -29,8 +29,8 @@
   #scene-frame { position:fixed; inset:0; z-index:0; width:100%; height:100%; border:0; display:block;
                  pointer-events:none; opacity:0; transition:opacity .9s; background:transparent; }
   /* a veil at the bottom keeps the time readable over the bright sea; one at the top for the menu */
-  body::before { content:''; position:fixed; inset:0 0 auto; height:46%; z-index:1; pointer-events:none; opacity:0; transition:opacity .6s;
-                 background:linear-gradient(to bottom, rgba(4,16,26,.40), rgba(4,16,26,.14) 55%, transparent); }
+  body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; opacity:0; transition:opacity .6s;
+                 background:radial-gradient(ellipse 72% 82% at 0 0, rgba(4,14,22,.78), rgba(4,14,22,.52) 34%, rgba(4,14,22,.2) 60%, transparent 82%); }
   body.unlocked::before { opacity:1; }
   body::after { content:''; position:fixed; inset:auto 0 0; height:36%; z-index:1; pointer-events:none;
                 background:linear-gradient(to top, rgba(4,16,26,.48), rgba(4,16,26,.16) 55%, transparent); }
@@ -59,9 +59,10 @@
   .glass { background:rgba(14,24,40,.40); -webkit-backdrop-filter:blur(20px) saturate(1.25); backdrop-filter:blur(20px) saturate(1.25);
            border:1px solid rgba(255,255,255,.2); border-radius:16px;
            box-shadow:0 24px 60px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.14); }
-  #login { width:min(400px, 100%); padding:clamp(34px,5vh,48px) clamp(26px,3.4vw,42px) clamp(26px,3.6vh,34px); text-align:center; }
-  .logo { font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:clamp(34px,4.1vw,46px);
-          letter-spacing:.13em; line-height:1; color:var(--yellow); text-shadow:0 1px 14px rgba(0,0,0,.3); margin-right:-.13em; }
+  #login { container-type:inline-size; width:min(420px, 100%); padding:clamp(34px,5vh,48px) clamp(26px,3.4vw,42px) clamp(26px,3.6vh,34px); text-align:center; }
+  /* the wordmark scales with the glass (12 letters ≈ 7.9 em with the spacing), so it never spills out */
+  .logo { font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:min(40px, 11.2cqi); white-space:nowrap;
+          letter-spacing:.12em; line-height:1; color:var(--yellow); text-shadow:0 1px 14px rgba(0,0,0,.3); margin-right:-.12em; }
   .rule { width:70px; height:1px; background:var(--yellow); opacity:.75; margin:16px auto 20px; }
   .sub { font-family:'Cormorant Garamond',Georgia,serif; font-weight:300; font-size:20px; letter-spacing:.08em; opacity:.95; margin-bottom:24px; }
   .field { position:relative; }
@@ -84,29 +85,52 @@
   @keyframes shake { 10%,90%{transform:translateX(-2px)} 20%,80%{transform:translateX(4px)} 30%,50%,70%{transform:translateX(-7px)} 40%,60%{transform:translateX(7px)} }
   .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 
-  /* after the password: the layout of vittoriodini.it */
+  /* after the password: the layout of vittoriodini.it, same measures */
   #info { top:calc(clamp(20px,4vh,48px) + env(safe-area-inset-top)); left:calc(clamp(20px,4vw,56px) + env(safe-area-inset-left));
-          max-width:min(540px,72vw); opacity:0; visibility:hidden; transform:translateY(6px);
+          max-width:min(540px,72vw); opacity:0; visibility:hidden; transform:translateY(6px); pointer-events:none;
           transition:opacity .6s .15s, transform .6s .15s, visibility .6s; }
   body.unlocked #info { opacity:1; visibility:visible; transform:none; }
+  #info a { pointer-events:auto; }
   #greet { font-weight:300; font-size:clamp(15px,1.5vw,19px); letter-spacing:.02em; opacity:.92; }
-  #name { font-family:'Cormorant Garamond',Georgia,serif; font-weight:500; font-size:clamp(28px,3.1vw,42px); letter-spacing:.12em; color:var(--yellow); margin-top:4px; line-height:1.05; }
-  #kind { font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:clamp(17px,1.6vw,21px); letter-spacing:.06em; margin-top:2px; }
-  #bio { font-weight:300; font-size:clamp(13px,1.15vw,15.5px); line-height:1.55; opacity:.9; margin-top:12px; }
-  #links { display:grid; grid-template-columns:max-content max-content; gap:10px 28px; margin-top:22px; }
-  #links a { color:#fff; text-decoration:none; font-weight:500; font-size:clamp(12.5px,1.05vw,14.5px); letter-spacing:.04em; opacity:.88;
-             border-bottom:1px solid rgba(255,255,255,.35); padding-bottom:3px; }
-  #links a:hover { opacity:1; border-bottom-color:var(--yellow); }
+  #name { font-family:'Cormorant Garamond',Georgia,serif; font-weight:500; font-size:clamp(22px,2.5vw,33px); letter-spacing:.1em;
+          color:var(--yellow); margin-top:4px; line-height:1.1; }
+  #bio { font-weight:300; font-size:clamp(13px,1.15vw,15.5px); line-height:1.55; opacity:.88; margin-top:10px; }
+  #links { margin-top:18px; display:grid; grid-template-columns:max-content max-content; gap:10px 28px; width:max-content; max-width:100%; }
+  #links a { color:#fff; text-decoration:none; font-weight:500; font-size:clamp(12.5px,1.05vw,14.5px);
+             letter-spacing:.04em; opacity:.85; border-bottom:1px solid rgba(255,255,255,.35); padding-bottom:2px;
+             transition:opacity .2s, border-color .2s; cursor:pointer; }
+  #links a:hover { opacity:1; border-color:#fff; }
 
-  /* card (its contents come in the next step) */
-  #veil { position:fixed; inset:0; z-index:5; background:rgba(4,8,16,.22); opacity:0; pointer-events:none; transition:opacity .25s; }
+  /* cards: the frosted glass of vittoriodini.it */
+  #veil { position:fixed; inset:0; z-index:5; background:rgba(4,8,16,.22); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);
+          opacity:0; pointer-events:none; transition:opacity .25s; }
   #veil.open { opacity:1; pointer-events:auto; }
-  #panel { position:fixed; z-index:6; top:50%; left:50%; transform:translate(-50%,-48%); width:min(880px,94vw); max-height:82vh;
-           padding:clamp(24px,3.5vw,44px); color:var(--ink); opacity:0; pointer-events:none; visibility:hidden; transition:opacity .25s, transform .25s, visibility .25s; }
+  #panel { position:fixed; z-index:6; top:50%; left:50%; transform:translate(-50%,-48%); width:min(880px,94vw);
+           max-height:82vh; max-height:82dvh; display:flex; flex-direction:column; overflow:hidden;
+           text-shadow:0 1px 8px rgba(0,0,0,.35); color:var(--ink); opacity:0; pointer-events:none; visibility:hidden;
+           transition:opacity .25s, transform .25s, visibility .25s; }
   #panel.open { opacity:1; pointer-events:auto; visibility:visible; transform:translate(-50%,-50%); }
-  #panel h2 { font-weight:600; font-size:21px; margin-bottom:14px; }
-  #panel p { font-weight:300; font-size:14px; line-height:1.6; opacity:.9; }
-  #close { position:absolute; top:18px; right:22px; border:0; background:none; color:#fff; font-size:24px; opacity:.6; cursor:pointer; }
+  #panel-header { display:flex; align-items:flex-start; gap:16px; flex:none; padding:clamp(24px,3.5vw,44px) clamp(24px,3.5vw,44px) 0; }
+  #panel-title { font-weight:600; font-size:21px; line-height:1.25; transition:font-size .2s, opacity .2s; }
+  #panel.scrolled #panel-title { font-size:17px; opacity:.72; }
+  #panel-body { overflow-y:auto; min-height:0; overscroll-behavior:contain; scrollbar-width:none;
+                padding:18px clamp(24px,3.5vw,44px) clamp(24px,3.5vw,44px); }
+  #panel-body::-webkit-scrollbar { display:none; }
+  #panel .entry { display:flex; gap:15px; margin:0 0 18px; align-items:flex-start; }
+  #panel .logo { width:40px; height:40px; border-radius:10px; flex:none; display:flex; align-items:center; justify-content:center;
+                 font:600 12px 'Inter Tight',system-ui,sans-serif; color:#232c3d; background:#fff; letter-spacing:.02em; text-shadow:none; margin:0; }
+  #panel .erole { font-weight:500; font-size:14.5px; line-height:1.4; }
+  #panel .erole a { color:var(--ink); text-decoration:none; border-bottom:1px solid rgba(255,255,255,.25); }
+  #panel .erole a:hover { border-color:#fff; }
+  #panel .eco { font-weight:300; font-size:13.5px; opacity:.85; margin-top:1px; }
+  #panel .emeta { font-size:11px; letter-spacing:.08em; text-transform:uppercase; opacity:.62; margin-top:3px; }
+  #panel .edesc { font-weight:300; font-size:13px; line-height:1.6; opacity:.85; margin-top:6px; }
+  #panel p { font-weight:300; font-size:13.5px; line-height:1.6; opacity:.9; }
+  #panel .about-paragraph + .about-paragraph { margin-top:14px; }
+  #panel a { color:#9cc4ee; }
+  #close { margin:-8px -10px 0 auto; padding:4px 10px; background:none; border:none; color:#fff; font-size:22px;
+           cursor:pointer; opacity:.6; font-family:inherit; flex:none; }
+  #close:hover { opacity:1; }
 
   /* bottom left: the weather toggle */
   #tune { position:fixed; left:calc(clamp(20px,4vw,56px) + env(safe-area-inset-left)); bottom:calc(clamp(18px,3.4vh,32px) + env(safe-area-inset-bottom));
@@ -120,9 +144,12 @@
     #lock { align-items:flex-end; padding:0 18px calc(136px + env(safe-area-inset-bottom)); }
     #clock { font-size:24px; } .amb { font-size:11.5px; margin-top:3px; } #date { display:none; } #lang { margin-top:6px; }
     #login { padding:28px 22px 20px; }
-    .logo { font-size:34px; }
     #tune { display:none; }
-    #info { top:calc(160px + env(safe-area-inset-top)); left:20px; max-width:calc(100vw - 40px); }
+    #info { top:calc(22px + env(safe-area-inset-top)); left:20px; max-width:calc(100vw - 40px); }
+    body::before { background:linear-gradient(to bottom, rgba(4,14,22,.74), rgba(4,14,22,.46) 30%, rgba(4,14,22,.12) 52%, transparent 64%); }
+    #links { gap:9px 22px; }
+    #panel { max-height:74vh; max-height:74dvh; }
+    #panel .logo { width:34px; height:34px; font-size:11px; }
   }
   @media (max-height:500px){
     #lock { align-items:center; }
@@ -177,12 +204,11 @@
 <div class="ui" id="info">
   <div id="greet"></div>
   <div id="name">BECCHIGIALLI</div>
-  <div id="kind">Holding Immobiliare</div>
   <p id="bio"></p>
   <nav id="links" aria-label="Menu"></nav>
 </div>
 <div id="veil"></div>
-<div id="panel" class="glass" role="dialog" aria-modal="true" aria-labelledby="panel-title"><button id="close" aria-label="Chiudi">&times;</button><h2 id="panel-title"></h2><p id="panel-body"></p></div>
+<div id="panel" class="glass" role="dialog" aria-modal="true" aria-labelledby="panel-title" aria-hidden="true" inert><div id="panel-header"><h2 id="panel-title"></h2><button id="close" aria-label="Chiudi">&times;</button></div><div id="panel-body"></div></div>
 
 <button id="tune" type="button" aria-expanded="false">Cambia il meteo</button>
 
@@ -197,10 +223,7 @@ const T = {
     sub: 'Accesso riservato', pw: 'Password', enter: 'Entra', bad: 'Password non corretta. Riprova.', show: 'Mostra la password', hide: 'Nascondi la password',
     local: 'Ora locale', sunrise: 'Alba', sunset: 'Tramonto', logout: 'Esci', tune: 'Cambia il meteo', close: 'Chiudi',
     greet: { m: 'Buongiorno.', a: 'Buon pomeriggio.', e: 'Buonasera.', n: 'Buonanotte.' },
-    kind: 'Holding Immobiliare',
-    bio: 'Da oltre 30 anni ci occupiamo di fornire soluzioni abitative a breve e lungo termine in località italiane ed estere.',
-    links: [['about','Chi siamo'],['contatti','Contatti'],['progetti','Progetti'],['corporate','Corporate'],['education','Education'],['pubblicazioni','Pubblicazioni'],['altro','Altro']],
-    soon: 'I contenuti di questa card arrivano nella prossima tappa.',
+    bio: 'Holding immobiliare. Da oltre 30 anni offriamo soluzioni abitative a breve e lungo termine, in Italia e all’estero.',
     wmo: { 0:'sereno', 1:'prevalentemente sereno', 2:'poco nuvoloso', 3:'coperto', 45:'nebbia', 48:'nebbia', 51:'pioviggine', 53:'pioviggine', 55:'pioviggine', 56:'pioviggine gelata', 57:'pioviggine gelata',
            61:'pioggia debole', 63:'pioggia', 65:'pioggia forte', 66:'pioggia gelata', 67:'pioggia gelata', 71:'neve debole', 73:'neve', 75:'neve forte', 77:'nevischio',
            80:'rovesci', 81:'rovesci', 82:'rovesci forti', 85:'rovesci di neve', 86:'rovesci di neve', 95:'temporale', 96:'temporale con grandine', 99:'temporale con grandine' }
@@ -209,10 +232,7 @@ const T = {
     sub: 'Private access', pw: 'Password', enter: 'Enter', bad: 'Wrong password. Please try again.', show: 'Show password', hide: 'Hide password',
     local: 'Local time', sunrise: 'Sunrise', sunset: 'Sunset', logout: 'Sign out', tune: 'Change the weather', close: 'Close',
     greet: { m: 'Good morning.', a: 'Good afternoon.', e: 'Good evening.', n: 'Good night.' },
-    kind: 'Real Estate Holding',
-    bio: 'For over 30 years we have provided short and long term housing in Italy and abroad.',
-    links: [['about','About'],['contatti','Contact'],['progetti','Projects'],['corporate','Corporate'],['education','Education'],['pubblicazioni','Publications'],['altro','Other']],
-    soon: 'The content of this card arrives in the next step.',
+    bio: 'Real estate holding. For over 30 years we have offered short and long term homes, in Italy and abroad.',
     wmo: { 0:'clear', 1:'mainly clear', 2:'partly cloudy', 3:'overcast', 45:'fog', 48:'fog', 51:'drizzle', 53:'drizzle', 55:'drizzle', 56:'freezing drizzle', 57:'freezing drizzle',
            61:'light rain', 63:'rain', 65:'heavy rain', 66:'freezing rain', 67:'freezing rain', 71:'light snow', 73:'snow', 75:'heavy snow', 77:'snow grains',
            80:'showers', 81:'showers', 82:'heavy showers', 85:'snow showers', 86:'snow showers', 95:'thunderstorm', 96:'thunderstorm with hail', 99:'thunderstorm with hail' }
@@ -231,8 +251,8 @@ function setLang(l, persist){
   $('lock-sub').textContent = t.sub; $('pw').placeholder = t.pw; $('pw-label').textContent = t.pw; $('enter').textContent = t.enter;
   $('eye').setAttribute('aria-label', $('pw').type === 'password' ? t.show : t.hide);
   $('logout').textContent = t.logout; $('tune').textContent = t.tune; $('close').setAttribute('aria-label', t.close);
-  $('kind').textContent = t.kind; $('bio').textContent = t.bio;
-  $('links').innerHTML = t.links.map(([k, v]) => `<a href="#${k}" data-panel="${k}">${v}</a>`).join('');
+  $('bio').textContent = t.bio;
+  renderLinks(); if (openKey) renderPanel(openKey);
   if ($('err').textContent) $('err').textContent = t.bad;
   tick(); renderWhere();
 }
@@ -361,7 +381,22 @@ async function check(pw){
   if (!m || !window.crypto || !crypto.subtle) return false;
   return (await sha256hex(m[1] + '\n' + pw.trim().normalize('NFC'))) === m[2];
 }
-function unlock(){
+/* everything behind the password lives in content.json, fetched only after the lock opens:
+   the one place to swap in an encrypted file later */
+let content = null;
+async function loadContent(){
+  if (content) return content;
+  const r = await fetch('content.json', { cache: 'no-cache' });
+  content = await r.json();
+  return content;
+}
+function renderLinks(){
+  const c = content && content[lang];
+  $('links').innerHTML = c ? c.links.map(([k, v]) => `<a href="#${k}" data-panel="${k}">${v}</a>`).join('') : '';
+}
+async function unlock(){
+  try { await loadContent(); } catch (e) {}
+  renderLinks();
   document.body.classList.add('unlocked');
   try { sessionStorage.setItem('bg-auth', 'v1'); } catch (e) {}
   const first = $('links').querySelector('a'); if (first) first.focus({ preventScroll: true });
@@ -381,17 +416,39 @@ $('logout').addEventListener('click', e => {
   try { sessionStorage.removeItem('bg-auth'); } catch (err) {}
   $('pw').value = ''; $('pw').focus();
 });
-try { if (sessionStorage.getItem('bg-auth') === 'v1') document.body.classList.add('unlocked'); } catch (e) {}
+try { if (sessionStorage.getItem('bg-auth') === 'v1') unlock(); } catch (e) {}
 if (matchMedia('(pointer: fine)').matches && !document.body.classList.contains('unlocked')) $('pw').focus({ preventScroll: true });
 
 /* ---------- cards (their content comes in the next step) ---------- */
+let openKey = null, lastTrigger = null;
+function renderPanel(k){
+  const html = content && content[lang].panels[k]; if (!html) return;
+  const body = $('panel-body'), keep = body.scrollTop;
+  body.innerHTML = html;
+  const h = body.querySelector('h2');
+  $('panel-title').textContent = h ? h.textContent : k;
+  if (h) h.remove();
+  body.scrollTop = keep;
+}
+function openPanel(k){
+  if (!content || !content[lang].panels[k]) return;
+  lastTrigger = document.activeElement; openKey = k; renderPanel(k);
+  $('panel-body').scrollTop = 0; $('panel').classList.remove('scrolled');
+  $('veil').classList.add('open'); $('panel').classList.add('open');
+  $('panel').setAttribute('aria-hidden', 'false'); $('panel').removeAttribute('inert');
+  $('close').focus();
+}
+function closePanel(){
+  if (!openKey) return;
+  openKey = null; $('veil').classList.remove('open'); $('panel').classList.remove('open');
+  $('panel').setAttribute('aria-hidden', 'true'); $('panel').setAttribute('inert', '');
+  if (lastTrigger && lastTrigger.focus) lastTrigger.focus();
+}
 $('links').addEventListener('click', e => {
   const a = e.target.closest('a[data-panel]'); if (!a) return;
-  e.preventDefault();
-  $('panel-title').textContent = a.textContent; $('panel-body').textContent = T[lang].soon;
-  $('veil').classList.add('open'); $('panel').classList.add('open'); $('close').focus();
+  e.preventDefault(); openPanel(a.dataset.panel);
 });
-function closePanel(){ $('veil').classList.remove('open'); $('panel').classList.remove('open'); }
+$('panel-body').addEventListener('scroll', () => $('panel').classList.toggle('scrolled', $('panel-body').scrollTop > 18));
 $('close').addEventListener('click', closePanel); $('veil').addEventListener('click', closePanel);
 document.addEventListener('keydown', e => { if (e.key === 'Escape'){ closePanel(); if (tuneOpen) setTune(false); } });
 

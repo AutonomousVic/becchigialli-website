@@ -1,0 +1,84 @@
+{
+ "it": {
+  "links": [
+   [
+    "about",
+    "Chi sono"
+   ],
+   [
+    "contatti",
+    "Contatti"
+   ],
+   [
+    "progetti",
+    "Progetti"
+   ],
+   [
+    "corporate",
+    "Corporate"
+   ],
+   [
+    "education",
+    "Education"
+   ],
+   [
+    "pubblicazioni",
+    "Pubblicazioni"
+   ],
+   [
+    "altro",
+    "Altro"
+   ]
+  ],
+  "panels": {
+   "progetti": "<h2>Progetti</h2><div class='entry'><div class='logo'>T</div><div><div class='erole'>Tespen Robotics</div><div class='eco'>Co-Founder e CEO</div><div class='emeta'>Intelligenza artificiale · attivo</div></div></div><div class='entry'><div class='logo'>Y</div><div><div class='erole'>Yezers</div><div class='eco'>Fondatore e Presidente</div><div class='emeta'>Non-profit, 700+ volontari · attivo</div></div></div><div class='entry'><div class='logo'>B</div><div><div class='erole'>Becchigialli Holdings Immobiliare</div><div class='eco'>Amministratore</div><div class='emeta'>Passive real estate</div></div></div><div class='entry'><div class='logo'>TV</div><div><div class='erole'>The Vigna</div><div class='eco'>CEO</div><div class='emeta'>E-commerce e fashion · 2015-2016 · chiuso</div></div></div><div class='entry'><div class='logo'>ToK</div><div><div class='erole'>Tales of Kingdom</div><div class='eco'>CEO, team di quattro sviluppatori</div><div class='emeta'>Gaming · 2012-2015 · exit</div></div></div>",
+   "corporate": "<h2>Corporate</h2><div class='entry'><div class='logo'>N</div><div><div class='erole'>Nomura Greentech</div><div class='eco'>Investment Banking, clean technology</div><div class='emeta'>2025 · San Francisco</div></div></div><div class='entry'><div class='logo'>UCB</div><div><div class='erole'>Haas Climate Solutions Fund</div><div class='eco'>Investment Associate, Clean Infrastructure</div><div class='emeta'>2025-2026 · San Francisco</div></div></div><div class='entry'><div class='logo'>UCB</div><div><div class='erole'>UC Berkeley, Haas School of Business</div><div class='eco'>Teaching Assistant</div><div class='emeta'>2025-2026</div></div></div><div class='entry'><div class='logo'>Eni</div><div><div class='erole'>Eni</div><div class='eco'>Head of Commercial, Investments and Trading</div><div class='emeta'>2022-2024 · New York, Houston, San Francisco</div><div class='edesc'>Fondata la società USA per Eni, acquisizioni e JV con F50/F100, rinegoziati PPA da $250-300M.</div></div></div><div class='entry'><div class='logo'>Eni</div><div><div class='erole'>Eni</div><div class='eco'>Commercial Negotiation Manager</div><div class='emeta'>2020-2022 · New York</div><div class='edesc'>Acquisizioni fino a 500MW, JV al 50%, SPV in 5 paesi.</div></div></div><div class='entry'><div class='logo'>Eni</div><div><div class='erole'>Eni</div><div class='eco'>Commercial and Negotiations</div><div class='emeta'>2017-2020 · Nord Africa, Angola, Kazakhstan</div><div class='edesc'>Turnaround in 9 paesi tra Europa, Africa e Asia.</div></div></div><div class='entry'><div class='logo'>BCG</div><div><div class='erole'>Boston Consulting Group</div><div class='eco'>Intern</div><div class='emeta'>2016-2017 · Milano</div></div></div>",
+   "education": "<h2>Education</h2><div class='entry'><div class='logo'>UCB</div><div><div class='erole'>UC Berkeley, Haas School of Business</div><div class='eco'>MBA, Master of Business Administration</div><div class='emeta'>2024-2026</div></div></div><div class='entry'><div class='logo'>R</div><div><div class='erole'>Rennes School of Business</div><div class='eco'>MSc Management e International Supply Chain</div><div class='emeta'>PGTC Exchange Programme</div></div></div><div class='entry'><div class='logo'>UF</div><div><div class='erole'>Università degli Studi di Firenze</div><div class='eco'>MSc e Laurea Triennale, Business Administration</div><div class='emeta'>Tesi: Matematica applicata</div></div></div>",
+   "pubblicazioni": "<h2>Pubblicazioni</h2><div class='entry'><div class='logo'>PDF</div><div><div class='erole'>E-commerce and Fast Fashion: The Vigna case study</div><div class='emeta'>Aprile 2017</div></div></div><div class='entry'><div class='logo'>PDF</div><div><div class='erole'>Bloomberg's spot and forward rates' setup methodologies</div><div class='emeta'>Aprile 2014</div></div></div>",
+   "contatti": "<h2>Contatti</h2><div class='entry'><div class='logo'>SF</div><div><div class='erole'>San Francisco, California</div><div class='eco'>Per collaborazioni, opportunità o semplicemente un caffè virtuale.</div></div></div><p style='margin:14px 0 8px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; opacity:.5'>Profili pubblici</p><div class='entry'><div class='logo'>in</div><div><div class='erole'><a href='https://www.linkedin.com/in/vittoriodini' target='_blank' rel='noopener'>LinkedIn</a></div><div class='eco'><a href='https://www.linkedin.com/in/vittoriodini' target='_blank' rel='noopener'>linkedin.com/in/vittoriodini</a></div></div></div><div class='entry'><div class='logo'>GH</div><div><div class='erole'><a href='https://github.com/autonomousvic' target='_blank' rel='noopener'>GitHub</a></div><div class='eco'><a href='https://github.com/autonomousvic' target='_blank' rel='noopener'>github.com/autonomousvic</a></div></div></div>",
+   "about": "<h2>Chi sono</h2><p class=\"about-paragraph\">Se ti sei preso il tempo di visitare il mio sito, grazie. Ci tengo a presentarmi.</p><p class=\"about-paragraph\">Mi chiamo Vittorio. Mi motiva costruire cose utili alle persone, capaci di migliorare la loro vita. Sono nato sull’Isola d’Elba ma cresciuto nelle valli manifatturiere della Toscana. Mi piace toccare i prodotti, capire come funzionano e vedere come il software si lega al mondo fisico.</p><p class=\"about-paragraph\">Anche se non sono un ingegnere (anche se penso che sarei stato discreto) e anche se non sono sempre andato d’accordo con la matematica, mi affascinano l’industria pesante, la robotica, l’intelligenza artificiale e l’energia. Sono anche un grande appassionato di politica, mercati e arte. Ho una componente creativa della quale vado molto fiero, anche se sui risultati possiamo discutere.</p><p class=\"about-paragraph\">Adesso sto lavorando per ripensare la mobilità nelle città, provando a reinventare l’autobus e il modo in cui funziona. Vedremo se ci riusciremo. Nel frattempo, mi sto godendo il viaggio.</p>",
+   "altro": "<h2>Altro</h2><div class='entry'><div class='logo'>CNG</div><div><div class='erole'>Consiglio Nazionale Giovani</div><div class='eco'>Presidenza del Consiglio dei Ministri</div><div class='emeta'>2020-oggi · Roma</div></div></div><div class='entry'><div class='logo'>UCB</div><div><div class='erole'>Student Advisory Board</div><div class='eco'>Berkeley Haas, Sustainable &amp; Impact Finance (SAIF)</div><div class='emeta'>2025-2026</div></div></div><div class='entry'><div class='logo'>D</div><div><div class='erole'>Diario di Vic</div><div class='emeta'>Blog personale · 2016-2018</div></div></div>"
+  }
+ },
+ "en": {
+  "links": [
+   [
+    "about",
+    "About"
+   ],
+   [
+    "contatti",
+    "Contact"
+   ],
+   [
+    "progetti",
+    "Projects"
+   ],
+   [
+    "corporate",
+    "Corporate"
+   ],
+   [
+    "education",
+    "Education"
+   ],
+   [
+    "pubblicazioni",
+    "Publications"
+   ],
+   [
+    "altro",
+    "Other"
+   ]
+  ],
+  "panels": {
+   "progetti": "<h2>Projects</h2><div class='entry'><div class='logo'>T</div><div><div class='erole'>Tespen Robotics</div><div class='eco'>Co-Founder and CEO</div><div class='emeta'>Artificial Intelligence · active</div></div></div><div class='entry'><div class='logo'>Y</div><div><div class='erole'>Yezers</div><div class='eco'>Founder and President</div><div class='emeta'>Non-profit, 700+ volunteers · active</div></div></div><div class='entry'><div class='logo'>B</div><div><div class='erole'>Becchigialli Holdings Immobiliare</div><div class='eco'>Director</div><div class='emeta'>Passive real estate</div></div></div><div class='entry'><div class='logo'>TV</div><div><div class='erole'>The Vigna</div><div class='eco'>CEO</div><div class='emeta'>E-commerce and fashion · 2015-2016 · closed</div></div></div><div class='entry'><div class='logo'>ToK</div><div><div class='erole'>Tales of Kingdom</div><div class='eco'>CEO, team of four developers</div><div class='emeta'>Gaming · 2012-2015 · exit</div></div></div>",
+   "corporate": "<h2>Corporate</h2><div class='entry'><div class='logo'>N</div><div><div class='erole'>Nomura Greentech</div><div class='eco'>Investment Banking, clean technology</div><div class='emeta'>2025 · San Francisco</div></div></div><div class='entry'><div class='logo'>UCB</div><div><div class='erole'>Haas Climate Solutions Fund</div><div class='eco'>Investment Associate, Clean Infrastructure</div><div class='emeta'>2025-2026 · San Francisco</div></div></div><div class='entry'><div class='logo'>UCB</div><div><div class='erole'>UC Berkeley, Haas School of Business</div><div class='eco'>Teaching Assistant</div><div class='emeta'>2025-2026</div></div></div><div class='entry'><div class='logo'>Eni</div><div><div class='erole'>Eni</div><div class='eco'>Head of Commercial, Investments and Trading</div><div class='emeta'>2022-2024 · New York, Houston, San Francisco</div><div class='edesc'>Founded Eni's US company, acquisitions and JVs with F50/F100, renegotiated $250-300M PPAs.</div></div></div><div class='entry'><div class='logo'>Eni</div><div><div class='erole'>Eni</div><div class='eco'>Commercial Negotiation Manager</div><div class='emeta'>2020-2022 · New York</div><div class='edesc'>Acquisitions up to 500MW, 50% JVs, SPVs in 5 countries.</div></div></div><div class='entry'><div class='logo'>Eni</div><div><div class='erole'>Eni</div><div class='eco'>Commercial and Negotiations</div><div class='emeta'>2017-2020 · North Africa, Angola, Kazakhstan</div><div class='edesc'>Turnarounds across 9 countries in Europe, Africa and Asia.</div></div></div><div class='entry'><div class='logo'>BCG</div><div><div class='erole'>Boston Consulting Group</div><div class='eco'>Intern</div><div class='emeta'>2016-2017 · Milan</div></div></div>",
+   "education": "<h2>Education</h2><div class='entry'><div class='logo'>UCB</div><div><div class='erole'>UC Berkeley, Haas School of Business</div><div class='eco'>MBA, Master of Business Administration</div><div class='emeta'>2024-2026</div></div></div><div class='entry'><div class='logo'>R</div><div><div class='erole'>Rennes School of Business</div><div class='eco'>MSc Management and International Supply Chain</div><div class='emeta'>PGTC Exchange Programme</div></div></div><div class='entry'><div class='logo'>UF</div><div><div class='erole'>University of Florence</div><div class='eco'>MSc and BSc, Business Administration</div><div class='emeta'>Thesis: Applied Mathematics</div></div></div>",
+   "pubblicazioni": "<h2>Publications</h2><div class='entry'><div class='logo'>PDF</div><div><div class='erole'>E-commerce and Fast Fashion: The Vigna case study</div><div class='emeta'>April 2017</div></div></div><div class='entry'><div class='logo'>PDF</div><div><div class='erole'>Bloomberg's spot and forward rates' setup methodologies</div><div class='emeta'>April 2014</div></div></div>",
+   "contatti": "<h2>Contact</h2><div class='entry'><div class='logo'>SF</div><div><div class='erole'>San Francisco, California</div><div class='eco'>For collaborations, opportunities or simply a virtual coffee.</div></div></div><p style='margin:14px 0 8px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; opacity:.5'>Public profiles</p><div class='entry'><div class='logo'>in</div><div><div class='erole'><a href='https://www.linkedin.com/in/vittoriodini' target='_blank' rel='noopener'>LinkedIn</a></div><div class='eco'><a href='https://www.linkedin.com/in/vittoriodini' target='_blank' rel='noopener'>linkedin.com/in/vittoriodini</a></div></div></div><div class='entry'><div class='logo'>GH</div><div><div class='erole'><a href='https://github.com/autonomousvic' target='_blank' rel='noopener'>GitHub</a></div><div class='eco'><a href='https://github.com/autonomousvic' target='_blank' rel='noopener'>github.com/autonomousvic</a></div></div></div>",
+   "about": "<h2>About</h2><p class=\"about-paragraph\">If you took the time to visit my site, thank you. I’d like to introduce myself.</p><p class=\"about-paragraph\">My name is Vittorio. I’m driven by building things that are useful to people and can make their lives better. I was born on Elba Island but grew up in the manufacturing valleys of Tuscany. I like to get my hands on products, understand how they work and see how software connects to the physical world.</p><p class=\"about-paragraph\">I’m not an engineer (though I think I would have been a decent one), and math and I haven’t always gotten along, yet I’m fascinated by heavy industry, robotics, artificial intelligence and energy. I’m also a big fan of politics, markets and art. I have a creative side I’m quite proud of, even if the results are open to debate.</p><p class=\"about-paragraph\">Right now I’m working on rethinking mobility in cities, trying to reinvent the bus and the way it works. We’ll see if we pull it off. In the meantime, I’m enjoying the ride.</p>",
+   "altro": "<h2>Other</h2><div class='entry'><div class='logo'>CNG</div><div><div class='erole'>Consiglio Nazionale Giovani (National Youth Council)</div><div class='eco'>Presidency of the Council of Ministers</div><div class='emeta'>2020-present · Rome</div></div></div><div class='entry'><div class='logo'>UCB</div><div><div class='erole'>Student Advisory Board</div><div class='eco'>Berkeley Haas, Sustainable &amp; Impact Finance (SAIF)</div><div class='emeta'>2025-2026</div></div></div><div class='entry'><div class='logo'>D</div><div><div class='erole'>Diario di Vic</div><div class='emeta'>Personal blog · 2016-2018</div></div></div>"
+  }
+ }
+}
