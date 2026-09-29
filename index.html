@@ -28,17 +28,18 @@
   #poster { position:fixed; inset:-40px; z-index:0; background:var(--lqip) 46% 42%/cover no-repeat; filter:blur(24px) brightness(var(--dim,1)); }
   #scene-frame { position:fixed; inset:0; z-index:0; width:100%; height:100%; border:0; display:block;
                  pointer-events:none; opacity:0; transition:opacity .9s; background:transparent; }
-  /* veils at the top and bottom keep the white texts readable over the bright sky and sea */
-  body::before { content:''; position:fixed; inset:0 0 auto; height:46%; z-index:1; pointer-events:none;
-                 background:linear-gradient(to bottom, rgba(4,16,26,.46), rgba(4,16,26,.16) 55%, transparent); }
-  body::after { content:''; position:fixed; inset:auto 0 0; height:22%; z-index:1; pointer-events:none;
-                background:linear-gradient(to top, rgba(4,16,26,.34), transparent); }
+  /* a veil at the bottom keeps the time readable over the bright sea; one at the top for the menu */
+  body::before { content:''; position:fixed; inset:0 0 auto; height:46%; z-index:1; pointer-events:none; opacity:0; transition:opacity .6s;
+                 background:linear-gradient(to bottom, rgba(4,16,26,.40), rgba(4,16,26,.14) 55%, transparent); }
+  body.unlocked::before { opacity:1; }
+  body::after { content:''; position:fixed; inset:auto 0 0; height:36%; z-index:1; pointer-events:none;
+                background:linear-gradient(to top, rgba(4,16,26,.48), rgba(4,16,26,.16) 55%, transparent); }
   .ui { position:fixed; z-index:2; text-shadow:0 1px 14px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.5); }
-  #where, #offices, #lock, body::before { transition:opacity .35s, visibility .35s; }
-  body.tuning #where, body.tuning #info, body.tuning #offices, body.tuning #lock, body.tuning::before { opacity:0; visibility:hidden; }
+  #where, #lock { transition:opacity .35s, visibility .35s; }
+  body.tuning #where, body.tuning #info, body.tuning #lock, body.tuning::before, body.tuning::after { opacity:0; visibility:hidden; }
 
-  /* top right: the visitor's time and sky */
-  #where { top:calc(clamp(20px,4vh,48px) + env(safe-area-inset-top)); right:calc(clamp(20px,4vw,56px) + env(safe-area-inset-right)); text-align:right; }
+  /* bottom right: the visitor's time and sky, out of the way of the sun and the moon */
+  #where { bottom:calc(clamp(18px,3.4vh,32px) + env(safe-area-inset-bottom)); right:calc(clamp(20px,4vw,56px) + env(safe-area-inset-right)); text-align:right; }
   #clock { font-weight:300; font-size:clamp(22px,2.3vw,30px); letter-spacing:.04em; font-variant-numeric:tabular-nums; }
   #place { font-size:clamp(11px,.95vw,13px); letter-spacing:.08em; text-transform:uppercase; opacity:.85; margin-top:2px; }
   .amb { font-weight:300; font-size:clamp(12px,1vw,13.5px); letter-spacing:.02em; opacity:.92; margin-top:6px; font-variant-numeric:tabular-nums; }
@@ -107,37 +108,28 @@
   #panel p { font-weight:300; font-size:14px; line-height:1.6; opacity:.9; }
   #close { position:absolute; top:18px; right:22px; border:0; background:none; color:#fff; font-size:24px; opacity:.6; cursor:pointer; }
 
-  /* bottom: offices, weather toggle, legal line */
-  #offices { right:calc(clamp(20px,4vw,56px) + env(safe-area-inset-right)); bottom:calc(clamp(18px,3.4vh,32px) + env(safe-area-inset-bottom));
-             display:flex; gap:18px; font-size:11px; letter-spacing:.1em; text-transform:uppercase; }
-  #offices span { opacity:.92; white-space:nowrap; }
-  #offices b { font-weight:500; font-variant-numeric:tabular-nums; margin-left:6px; }
-  #offices i { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:7px; vertical-align:1px; background:#ffd966; box-shadow:0 0 6px rgba(255,210,90,.8); }
-  #offices i.night { background:none; border:1px solid rgba(255,255,255,.75); box-shadow:none; }
+  /* bottom left: the weather toggle */
   #tune { position:fixed; left:calc(clamp(20px,4vw,56px) + env(safe-area-inset-left)); bottom:calc(clamp(18px,3.4vh,32px) + env(safe-area-inset-bottom));
           font:400 11px 'Inter Tight',system-ui,sans-serif; letter-spacing:.06em; color:#fff; background:none; border:0; cursor:pointer;
           border-bottom:1px dotted rgba(255,255,255,.4); padding:0 0 1px; opacity:.22; visibility:hidden; z-index:4; }
   #tune.on { visibility:visible; }
   #tune:hover, #tune.active, #tune:focus-visible { opacity:.9; }
-  #legal { left:50%; transform:translateX(-50%); bottom:calc(6px + env(safe-area-inset-bottom)); font-size:10px; letter-spacing:.03em;
-           opacity:.62; white-space:nowrap; text-align:center; }
 
   @media (max-width:640px){
-    #where { top:calc(16px + env(safe-area-inset-top)); right:calc(18px + env(safe-area-inset-right)); }
-    #lock { align-items:flex-end; padding:0 18px calc(92px + env(safe-area-inset-bottom)); }
+    #where { bottom:calc(18px + env(safe-area-inset-bottom)); right:calc(18px + env(safe-area-inset-right)); }
+    #lock { align-items:flex-end; padding:0 18px calc(136px + env(safe-area-inset-bottom)); }
+    #clock { font-size:24px; } .amb { font-size:11.5px; margin-top:3px; } #date { display:none; } #lang { margin-top:6px; }
     #login { padding:28px 22px 20px; }
     .logo { font-size:34px; }
-    #offices { left:14px; right:14px; bottom:calc(34px + env(safe-area-inset-bottom)); justify-content:center; gap:11px; font-size:9px; }
-    #offices i { margin-right:5px; } #offices b { margin-left:4px; }
     #tune { display:none; }
-    #legal { white-space:normal; width:calc(100vw - 36px); font-size:8.5px; line-height:1.4; }
     #info { top:calc(160px + env(safe-area-inset-top)); left:20px; max-width:calc(100vw - 40px); }
   }
   @media (max-height:500px){
     #lock { align-items:center; }
     #login { padding:18px 24px 12px; width:min(360px,100%); }
     .rule { margin:10px auto 10px; } .sub { margin-bottom:10px; font-size:17px; }
-    #legal { display:none; }
+    #lock { justify-content:flex-start; padding-left:calc(24px + env(safe-area-inset-left)); }
+    #where .amb#date, #where .amb#sun { display:none; }
   }
   @media (prefers-reduced-motion: reduce){ * { transition-duration:.01s !important; animation:none !important; } }
 </style>
@@ -192,9 +184,7 @@
 <div id="veil"></div>
 <div id="panel" class="glass" role="dialog" aria-modal="true" aria-labelledby="panel-title"><button id="close" aria-label="Chiudi">&times;</button><h2 id="panel-title"></h2><p id="panel-body"></p></div>
 
-<div class="ui" id="offices"></div>
 <button id="tune" type="button" aria-expanded="false">Cambia il meteo</button>
-<footer class="ui" id="legal">Becchigialli Holding Immobiliare s.s. · Sede legale: Via Maioli 8, 56028 San Miniato (PI) · © 1981–<span id="year">2026</span></footer>
 
 <script type="module">
 import { sunTimes, OFFICES } from './astro.js';
@@ -205,7 +195,7 @@ const $ = id => document.getElementById(id);
 const T = {
   it: {
     sub: 'Accesso riservato', pw: 'Password', enter: 'Entra', bad: 'Password non corretta. Riprova.', show: 'Mostra la password', hide: 'Nascondi la password',
-    local: 'Ora locale', sunrise: 'Alba', sunset: 'Tramonto', logout: 'Esci', tune: 'Cambia il meteo', close: 'Chiudi', offices: 'Orari delle sedi',
+    local: 'Ora locale', sunrise: 'Alba', sunset: 'Tramonto', logout: 'Esci', tune: 'Cambia il meteo', close: 'Chiudi',
     greet: { m: 'Buongiorno.', a: 'Buon pomeriggio.', e: 'Buonasera.', n: 'Buonanotte.' },
     kind: 'Holding Immobiliare',
     bio: 'Da oltre 30 anni ci occupiamo di fornire soluzioni abitative a breve e lungo termine in località italiane ed estere.',
@@ -217,7 +207,7 @@ const T = {
   },
   en: {
     sub: 'Private access', pw: 'Password', enter: 'Enter', bad: 'Wrong password. Please try again.', show: 'Show password', hide: 'Hide password',
-    local: 'Local time', sunrise: 'Sunrise', sunset: 'Sunset', logout: 'Sign out', tune: 'Change the weather', close: 'Close', offices: 'Office hours',
+    local: 'Local time', sunrise: 'Sunrise', sunset: 'Sunset', logout: 'Sign out', tune: 'Change the weather', close: 'Close',
     greet: { m: 'Good morning.', a: 'Good afternoon.', e: 'Good evening.', n: 'Good night.' },
     kind: 'Real Estate Holding',
     bio: 'For over 30 years we have provided short and long term housing in Italy and abroad.',
@@ -241,7 +231,6 @@ function setLang(l, persist){
   $('lock-sub').textContent = t.sub; $('pw').placeholder = t.pw; $('pw-label').textContent = t.pw; $('enter').textContent = t.enter;
   $('eye').setAttribute('aria-label', $('pw').type === 'password' ? t.show : t.hide);
   $('logout').textContent = t.logout; $('tune').textContent = t.tune; $('close').setAttribute('aria-label', t.close);
-  $('offices').setAttribute('aria-label', t.offices);
   $('kind').textContent = t.kind; $('bio').textContent = t.bio;
   $('links').innerHTML = t.links.map(([k, v]) => `<a href="#${k}" data-panel="${k}">${v}</a>`).join('');
   if ($('err').textContent) $('err').textContent = t.bad;
@@ -271,10 +260,6 @@ function tick(){
   $('date').textContent = new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }).format(d);
   const h = visitorHour();
   $('greet').textContent = t.greet[(h >= 5 && h < 12) ? 'm' : (h >= 12 && h < 18) ? 'a' : (h >= 18 && h < 23) ? 'e' : 'n'];
-  $('offices').innerHTML = OFFICES.map(o => {
-    const s = sunTimes(d, o.lat, o.lon), day = s.rise ? d >= s.rise && d < s.set : true;
-    return `<span><i class="${day ? '' : 'night'}"></i>${o.name[lang]}<b>${fmtTime(d, o.tz)}</b></span>`;
-  }).join('');
 }
 setInterval(tick, 5000);
 
@@ -410,7 +395,6 @@ function closePanel(){ $('veil').classList.remove('open'); $('panel').classList.
 $('close').addEventListener('click', closePanel); $('veil').addEventListener('click', closePanel);
 document.addEventListener('keydown', e => { if (e.key === 'Escape'){ closePanel(); if (tuneOpen) setTune(false); } });
 
-$('year').textContent = new Date().getFullYear();
 setLang(lang, false);
 locate();
 </script>

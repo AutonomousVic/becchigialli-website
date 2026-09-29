@@ -102,8 +102,16 @@ def main():
     # grow the foreground by 2 px so mixed edge pixels travel with it
     d = np.maximum(d, cv2.dilate(d, np.ones((5, 5), np.uint8)) * (fg_s > 0.05))
 
-    sway = np.where(fg_s > 0.2, 1.0, 0.0) + np.where(veg & ~fg, 0.35, 0.0)
-    sway = cv2.GaussianBlur(np.clip(sway, 0, 1).astype(np.float32), (0, 0), 1.5)
+    # Sway amplitude. The foreground branches hang from the frame: still where they enter the
+    # picture, freer towards the tips. The field is widened and softened well beyond the leaves,
+    # so a leaf never gets cut at the edge of its mask: a thin margin of background bends with it.
+    hinge = np.minimum.reduce([np.clip((w - xx) / 260.0, 0, 1), np.clip((h - yy) / 200.0, 0, 1),
+                               np.clip(xx / 180.0, 0, 1)]) ** 1.2
+    fg_wide = cv2.GaussianBlur(cv2.dilate(fg.astype(np.float32), np.ones((15, 15), np.uint8)), (0, 0), 9)
+    fg_wide = np.clip(fg_wide * 1.4, 0, 1)
+    hill = cv2.GaussianBlur((veg & ~fg).astype(np.float32), (0, 0), 3) * 0.06
+    sway = np.maximum(fg_wide * (0.15 + 0.85 * hinge), hill)
+    sway = np.clip(sway, 0, 1).astype(np.float32)
 
     water_b = cv2.GaussianBlur(water.astype(np.float32), (0, 0), 2.0)
     maps = np.dstack([water_b, sway, d])  # BGR order for OpenCV: B water, G sway, R disparity

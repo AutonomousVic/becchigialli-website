@@ -15,7 +15,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud">ora <input id="hr" type="range" min="0" max="24" step="0.05"> <b id="hv"></b></div>
+<div id="hud">ora <input id="hr" type="range" min="0" max="24" step="0.05"> <b id="hv"></b><br>vento <input id="wd" type="range" min="0" max="18" step="0.5"> <b id="wv"></b></div>
 <script type="module">
 /* The background of becchigialli.it: one photograph of the Paraggi cove, split into layers
    (sky, sea, foreground leaves, depth) and relit for the visitor's hour. Plain WebGL2. */
@@ -82,7 +82,7 @@ const FS = `#version 300 es
 precision highp float;
 uniform sampler2D uPhoto, uMaps, uSky, uFill;
 uniform vec2 uRes, uImg, uOff, uVis, uCam;
-uniform float uTime, uPivot, uWind, uHorizonY;
+uniform float uTime, uPivot, uWind, uWindPx, uWaveK, uRefrPx, uHorizonY;
 uniform float uEV, uSat, uCon, uSkyMix, uNight, uStars, uCloud, uSunVis, uMoonVis, uLightsK, uWarmSea, uGlint;
 uniform vec3 uWB, uZenith, uHorizon, uGlow, uSunCol, uLift;
 uniform vec2 uSunPos, uMoonPos, uMoonPhase;
@@ -135,19 +135,42 @@ void main(){
   vec4 m = texture(uMaps, q);
   vec2 ip = q*uImg;
 
-  // wind in the leaves: the foreground branch moves more than the trees on the hill
-  float fgW = smoothstep(0.85, 0.95, m.r);
-  float gust = 0.55 + 0.45*sin(uTime*0.55 + q.x*5.0 - q.y*2.0);
-  vec2 sw = vec2(vnoise(ip*0.018 + vec2(uTime*0.45, 1.7)) - 0.5, vnoise(ip*0.018 + vec2(4.2, uTime*0.38)) - 0.5);
-  q += m.g*uWind*gust*sw*(0.9 + 2.6*fgW)/uImg;
+  // wind in the branches: the whole branch swings slowly, the leaves shiver on top of it, and
+  // gusts sweep across the picture. The amplitude map is still where a branch enters the frame.
+  if (m.g > 0.004){
+    float t = uTime;
+    float front = sin(t*0.31 - q.x*4.0 + q.y*1.5);
+    float gust = (0.55 + 0.45*front)*(0.8 + 0.2*sin(t*1.7 + q.y*9.0));
+    float swing = sin(t*(0.9 + 0.25*uWind) + q.y*3.0 + q.x*2.0) + 0.45*sin(t*(1.9 + 0.4*uWind) + q.x*7.0 + 1.3);
+    vec2 shiver = vec2(vnoise(ip*0.035 + vec2(t*(1.6 + uWind), 1.7)), vnoise(ip*0.035 + vec2(4.2, t*(1.4 + uWind)))) - 0.5;
+    vec2 disp = vec2(swing, -0.35*swing*swing + 0.25*swing)*gust*uWindPx + shiver*(1.2 + 1.8*uWind);
+    q += m.g*disp/uImg;
+  }
 
-  // the sea: small ripples bend what is under and on the water
-  float wm = m.b;
+  // the sea: waves travel across the bay. The picture is a view from above, so a patch of water
+  // at disparity d lies about 1/d away: waves shrink and slow down towards the far coast.
+  float wm = texture(uMaps, q).b;
+  vec2 slope = vec2(0.0);
   if (wm > 0.01){
-    vec2 wp = ip*vec2(0.030, 0.055);
-    float a = fbm(wp + vec2(uTime*0.22, uTime*0.07), 3), b = fbm(wp*1.3 + vec2(5.2 - uTime*0.12, uTime*0.19), 3);
-    float near = mix(0.4, 1.4, clamp((m.r - 0.1)/0.6, 0.0, 1.0));
-    q += wm*vec2(a - 0.5, b - 0.5)*1.9*near/uImg;
+    float d = max(m.r, 0.06);
+    vec2 w = vec2((q.x - 0.5)*aspect, 1.0)*60.0/d;                  // metres, roughly
+    float foot = 0.045/(d*d) + 0.06/d;                              // metres covered by one photo pixel
+    float t = uTime*(0.75 + 0.15*uWind);
+    const int NW = 6;
+    vec3 WV[NW] = vec3[](vec3(9.0, 0.35, 0.095), vec3(5.6, -0.55, 0.085), vec3(3.4, 1.15, 0.075),
+                         vec3(2.1, 0.05, 0.065), vec3(1.3, -1.05, 0.055), vec3(0.8, 0.7, 0.045));
+    for (int i = 0; i < NW; i++){
+      float L = WV[i].x, k = 6.2831853/L;
+      vec2 dir = vec2(cos(WV[i].y), sin(WV[i].y));
+      float fade = clamp(1.0 - 3.0*foot/L, 0.0, 1.0);             // waves under a few pixels would only flicker
+      float ph = dot(dir, w)*k - t*sqrt(9.81*k) + float(i)*1.7;
+      slope += WV[i].z*fade*cos(ph)*dir;
+    }
+    vec2 cw = w*0.35 + vec2(t*0.3, -t*0.2);
+    slope += (vec2(fbm(cw, 3), fbm(cw + 7.3, 3)) - 0.5)*0.12*clamp(1.0 - 2.0*foot, 0.0, 1.0);
+    slope *= uWaveK;
+    // refraction: the rocks and the bottom seen through the moving surface
+    q += wm*slope*vec2(1.0, 0.7)*uRefrPx*(0.25 + d)/uImg;
   }
 
   vec3 c = texture(uPhoto, q).rgb;
@@ -167,6 +190,12 @@ void main(){
     float g = h12(cell + floor(uTime*7.0 + h12(cell)*7.0));
     float glint = step(0.9993, g)*smoothstep(0.45, 0.85, vnoise(ip*0.02 + uTime*0.1))*(1.0 - smoothstep(0.35, 0.7, m.r));
     col += wm*glint*uGlint*uSunCol*1.1;
+    // light on the waves: faces tilted towards the sky are brighter, the troughs darker
+    float farW = 1.0 - smoothstep(0.1, 0.5, m.r);
+    float facing = clamp(dot(slope, vec2(0.3, -0.95)), -0.45, 0.45);
+    col *= 1.0 + wm*facing*(0.5 + 0.4*farW);
+    col += wm*max(facing, 0.0)*uHorizon*(0.05 + 0.12*farW);
+    col += wm*smoothstep(0.22, 0.4, facing)*uGlint*uSunCol*0.25*(0.3 + farW);
     // the far sea mirrors the sky at dusk
     float far = 1.0 - smoothstep(0.10, 0.32, m.r);
     col = mix(col, col*0.75 + uHorizon*0.30, wm*far*uWarmSea*0.7);
@@ -366,11 +395,20 @@ function moonPhase(date){
 }
 
 /* ---------- state ---------- */
-const state = { hour: null, pinned: false, weather: { cloud: 0.18, wind: 1 }, t0: performance.now(), frozen: null };
+const state = { hour: null, pinned: false, weather: { cloud: 0.18, wind: 3 }, windPinned: false, t0: performance.now(), frozen: null };
+if (QS.has('wind')) { state.weather.wind = parseFloat(QS.get('wind')); state.windPinned = true; }
+// wind in m/s → how much the scene moves: a breath at 1 m/s, the reference at 5, a gale above 12
+function windK(ms){
+  const K = [[0, 0.25], [1, 0.35], [5, 1], [12, 2.5], [20, 2.8]];
+  for (let i = 1; i < K.length; i++) if (ms <= K[i][0]) return K[i-1][1] + (K[i][1] - K[i-1][1])*(ms - K[i-1][0])/(K[i][0] - K[i-1][0]);
+  return 2.8;
+}
 if (QS.has('hour')) { state.hour = parseFloat(QS.get('hour')); state.pinned = true; }
 if (QS.has('t')) state.frozen = parseFloat(QS.get('t'));
 if (QS.has('tools')) document.body.classList.add('tools');
 const hr = document.getElementById('hr'), hv = document.getElementById('hv');
+const wd = document.getElementById('wd'), wv = document.getElementById('wv');
+wd.addEventListener('input', () => { state.weather.wind = parseFloat(wd.value); state.windPinned = true; });
 hr.addEventListener('input', () => { state.hour = parseFloat(hr.value); state.pinned = true; });
 
 const LIGHT_COL = [[1.0, 0.72, 0.42], [1.0, 0.56, 0.22], [1.0, 0.78, 0.55]];
@@ -430,7 +468,13 @@ function frame(now){
   gl.uniform2f(U.uCam, cam[0], cam[1]);
   gl.uniform1f(U.uTime, reduce ? 0 : t % 3600);
   gl.uniform1f(U.uPivot, SCENE.pivot);
-  gl.uniform1f(U.uWind, reduce ? 0 : 1.0 + 1.5*(state.weather.wind - 1));
+  const wk = windK(state.weather.wind);
+  wv.textContent = state.weather.wind.toFixed(1) + ' m/s';
+  if (!state.windPinned) wd.value = state.weather.wind;
+  gl.uniform1f(U.uWind, reduce ? 0 : wk);
+  gl.uniform1f(U.uWindPx, reduce ? 0 : 4.5*wk + 0.8*wk*wk);       // swing of a branch tip, photo pixels
+  gl.uniform1f(U.uWaveK, reduce ? 0.3 : 0.55 + 0.45*wk);
+  gl.uniform1f(U.uRefrPx, 9.0 + 4.0*wk);
   gl.uniform1f(U.uHorizonY, SCENE.horizonY);
   gl.uniform1f(U.uEV, L.ev);
   gl.uniform3fv(U.uWB, L.wb);
@@ -495,6 +539,7 @@ window.addEventListener('message', e => {
   if (m.type === 'site:time' && Number.isFinite(m.hour)){
     if (!state.pinned) state.hour = ((m.hour % 24) + 24) % 24;
     if (m.weather && Number.isFinite(m.weather.cloud)) state.weather.cloud = Math.min(1, Math.max(0.1, m.weather.cloud));
+    if (m.weather && Number.isFinite(m.weather.wind) && !state.windPinned) state.weather.wind = m.weather.wind;
     if (QS.has('still')) frame(performance.now());
   }
   // "Cambia il meteo": for now just the hour slider; the full panel comes in the next step
@@ -503,7 +548,12 @@ window.addEventListener('message', e => {
 
 // test hook: render a given hour and moment deterministically
 window.__scene = {
-  set(hour, t){ state.hour = hour; state.pinned = true; if (t !== undefined) state.frozen = t; frame(performance.now()); },
+  set(hour, t, wind){
+    state.hour = hour; state.pinned = true;
+    if (t !== undefined) state.frozen = t;
+    if (wind !== undefined){ state.weather.wind = wind; state.windPinned = true; }
+    frame(performance.now());
+  },
   lights: () => lights.length
 };
 
