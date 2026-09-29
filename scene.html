@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Becchigialli - scena</title>
+<style>
+  html,body{margin:0;height:100%;width:100%;overflow:hidden;background:#0b1a24}
+  canvas{display:block;width:100%;height:100%;pointer-events:none}
+  #hud{position:fixed;right:16px;top:16px;font:12px/1.4 ui-monospace,Menlo,monospace;color:#cfe3ee;
+       background:rgba(10,16,22,.7);padding:6px 9px;border-radius:6px;display:none}
+  body.tools #hud{display:block}
+  #hud input{width:260px;vertical-align:middle}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">ora <input id="hr" type="range" min="0" max="24" step="0.05"> <b id="hv"></b></div>
+<script type="module">
+/* The background of becchigialli.it: one photograph of the Paraggi cove, split into layers
+   (sky, sea, foreground leaves, depth) and relit for the visitor's hour. Plain WebGL2. */
+
+const QS = new URLSearchParams(location.search);
+const EMBED = window.parent !== window;
+const IS_PHONE = matchMedia('(pointer: coarse)').matches || innerWidth <= 820;
+
+function fail(reason){
+  if (EMBED) window.parent.postMessage({type:'site:scene-error', reason: String(reason)}, '*');
+  throw new Error(reason);
+}
+
+/* ---------- scene description (photo space: x right, y down, 0..1) ---------- */
+const SCENE = {
+  photo: 'img/caletta.jpg', w: 1086, h: 1200,
+  horizonY: 373/1200,                 // the far shoreline
+  focal: { landscape: [0.46, 0.42], portrait: [0.43, 0.5] },
+  pivot: 0.5,                         // disparity that stays put while the camera drifts
+  // the setting sun goes down over the far coast on the right; at dawn it rises behind the hill
+  sunSet: [0.97, 0.20], sunRise: [0.15, 0.05],
+  moon: [0.83, 0.235]
+};
+
+// lit windows and lamps, in photo pixels: [x, y, radius px, kind] (0 warm window, 1 lamp, 2 far coast)
+const LIGHT_PX = [
+  // pink villa
+  [241,335,3.2,0],[101,389,3.4,0],[157,392,3.2,0],[185,392,3.2,0],[213,392,3.2,0],[241,392,3.4,0],[280,392,2.8,0],
+  [110,452,3.4,0],[180,450,3.4,0],[240,447,3.4,0],[276,440,2.6,0],[180,520,3.2,0],[130,522,3,0],
+  // yellow villa
+  [462,331,2.6,0],[480,331,2.6,0],[502,331,2.6,0],[537,329,3,0],[567,330,3,0],[675,332,2.8,0],
+  [460,386,2.6,0],[500,386,2.8,0],[580,382,3,0],[612,384,3,0],[642,384,3,0],[675,382,3,0],[707,435,3,0],
+  [470,440,3.6,0],[536,442,4,0],[580,440,3.4,0],[610,440,3.2,0],[630,440,3.2,0],[652,440,3.2,0],
+  [470,487,3,0],[447,492,3,0],[732,500,2.8,0],
+  // the small castle
+  [375,500,2.8,0],[400,498,2.8,0],[450,547,3,0],[475,547,3,0],[412,557,3,0],[330,556,3.2,0],[362,556,3.2,0],
+  // lamps along the path and on the tower
+  [360,362,2.4,1],[594,160,2.2,1],[150,213,2,1],[780,494,2.2,1],[848,500,2.2,1]
+];
+// the far coast: a scatter of small lights along the shore and up the slopes
+{
+  let s = 20260929;
+  const rnd = () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0)/4294967296; };
+  for (let i = 0; i < 34; i++){
+    const x = 912 + rnd()*172;
+    const up = rnd() < 0.25 ? 3 + rnd()*14 : rnd()*2;
+    LIGHT_PX.push([x, 371 - up, 0.55 + rnd()*0.35, 2]);
+  }
+}
+
+/* ---------- WebGL2 ---------- */
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:false, depth:false, stencil:false,
+                                        premultipliedAlpha:false, powerPreference:'default'});
+if (!gl) fail('WebGL2 non disponibile');
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); stop('WebGL context lost'); });
+
+const VS = `#version 300 es
+void main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p*2.0 - 1.0, 0.0, 1.0); }`;
+
+const MAXL = 96;
+const FS = `#version 300 es
+precision highp float;
+uniform sampler2D uPhoto, uMaps, uSky, uFill;
+uniform vec2 uRes, uImg, uOff, uVis, uCam;
+uniform float uTime, uPivot, uWind, uHorizonY;
+uniform float uEV, uSat, uCon, uSkyMix, uNight, uStars, uCloud, uSunVis, uMoonVis, uLightsK, uWarmSea, uGlint;
+uniform vec3 uWB, uZenith, uHorizon, uGlow, uSunCol, uLift;
+uniform vec2 uSunPos, uMoonPos, uMoonPhase;
+uniform int uNL;
+uniform vec4 uL[${MAXL}];   // x, y (photo uv), radius px, flicker seed
+uniform vec4 uLC[${MAXL}];  // rgb, on 0..1
+out vec4 oC;
+
+float h12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y)*p3.z); }
+float vhash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0 - 2.0*f);
+  return mix(mix(vhash(i), vhash(i+vec2(1,0)), u.x), mix(vhash(i+vec2(0,1)), vhash(i+vec2(1,1)), u.x), u.y);
+}
+float fbm(vec2 p, int oct){ float s = 0.0, a = 0.5; for (int i = 0; i < 6; i++){ if (i >= oct) break; s += a*vnoise(p); p = p*2.03 + 17.1; a *= 0.5; } return s; }
+vec3 toSRGB(vec3 c){ return mix(c*12.92, 1.055*pow(max(c, vec3(0.0)), vec3(1.0/2.4)) - 0.055, step(vec3(0.0031308), c)); }
+vec3 lin(vec3 c){ return mix(c/12.92, pow((c + 0.055)/1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+const vec3 LUM = vec3(0.2126, 0.7152, 0.0722);
+
+vec3 grade(vec3 c){
+  c *= exp2(uEV + uWB);
+  float l = dot(c, LUM);
+  c = mix(vec3(l), c, uSat);
+  c = max(c, 0.0);
+  c = 0.18*pow(c/0.18 + 1e-5, vec3(uCon));
+  c += uLift;
+  // night vision: dim tones lose their colour and turn blue (as on vittoriodini.it)
+  float l2 = dot(c, LUM);
+  c = mix(c, l2*vec3(0.60, 0.76, 1.18), uNight*0.65*(1.0 - smoothstep(0.03, 0.6, l2)));
+  return c;
+}
+
+vec3 drawnSky(vec2 p, float aspect){
+  float t = clamp((uHorizonY - p.y)/uHorizonY, 0.0, 1.0);
+  vec3 c = mix(uHorizon, uZenith, pow(t, 0.55));
+  vec2 dv = (p - uSunPos)*vec2(aspect, 1.0);
+  float r = length(dv);
+  c += uGlow*(0.55*exp(-r*r/0.006) + 0.35*exp(-r/0.16))*uSunVis;
+  return c;
+}
+
+void main(){
+  vec2 s = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y)/uRes;
+  vec2 p = uOff + s*uVis;
+  float aspect = uImg.x/uImg.y;
+
+  // parallax: each surface moves with its disparity around the pivot
+  float d0 = texture(uMaps, p).r;
+  vec2 q = p - uCam*(d0 - uPivot);
+  vec4 m = texture(uMaps, q);
+  vec2 ip = q*uImg;
+
+  // wind in the leaves: the foreground branch moves more than the trees on the hill
+  float fgW = smoothstep(0.85, 0.95, m.r);
+  float gust = 0.55 + 0.45*sin(uTime*0.55 + q.x*5.0 - q.y*2.0);
+  vec2 sw = vec2(vnoise(ip*0.018 + vec2(uTime*0.45, 1.7)) - 0.5, vnoise(ip*0.018 + vec2(4.2, uTime*0.38)) - 0.5);
+  q += m.g*uWind*gust*sw*(0.9 + 2.6*fgW)/uImg;
+
+  // the sea: small ripples bend what is under and on the water
+  float wm = m.b;
+  if (wm > 0.01){
+    vec2 wp = ip*vec2(0.030, 0.055);
+    float a = fbm(wp + vec2(uTime*0.22, uTime*0.07), 3), b = fbm(wp*1.3 + vec2(5.2 - uTime*0.12, uTime*0.19), 3);
+    float near = mix(0.4, 1.4, clamp((m.r - 0.1)/0.6, 0.0, 1.0));
+    q += wm*vec2(a - 0.5, b - 0.5)*1.9*near/uImg;
+  }
+
+  vec3 c = texture(uPhoto, q).rgb;
+  float alpha = texture(uSky, q).r;
+  vec3 fill = texture(uFill, q).rgb;
+  vec3 land = clamp((c - alpha*fill)/max(1.0 - alpha, 0.12), 0.0, 1.0);
+  vec3 col = grade(land);
+
+  // light dancing on the sea floor and sparkles where the sun catches the ripples
+  if (wm > 0.01){
+    vec2 cp = ip*0.045;
+    float k = abs(fbm(cp + vec2(uTime*0.35, -uTime*0.21), 3) - fbm(cp*1.1 + vec2(-uTime*0.27, uTime*0.3) + 9.0, 3));
+    float caustic = pow(1.0 - clamp(k*3.2, 0.0, 1.0), 6.0);
+    float shallow = clamp((m.r - 0.25)/0.5, 0.0, 1.0);
+    col *= 1.0 + wm*caustic*0.55*shallow*uGlint;
+    vec2 cell = floor(ip*0.75);
+    float g = h12(cell + floor(uTime*7.0 + h12(cell)*7.0));
+    float glint = step(0.9993, g)*smoothstep(0.45, 0.85, vnoise(ip*0.02 + uTime*0.1))*(1.0 - smoothstep(0.35, 0.7, m.r));
+    col += wm*glint*uGlint*uSunCol*1.1;
+    // the far sea mirrors the sky at dusk
+    float far = 1.0 - smoothstep(0.10, 0.32, m.r);
+    col = mix(col, col*0.75 + uHorizon*0.30, wm*far*uWarmSea*0.7);
+    // the moon's path on the open water
+    float mx = abs(q.x - uMoonPos.x)*aspect;
+    float path = exp(-mx*mx/0.0012)*far*wm;
+    float sh = step(0.975, h12(floor(ip*vec2(0.6, 1.4)) + floor(uTime*5.0)));
+    col += path*uMoonVis*(0.05 + 0.9*sh)*vec3(0.75, 0.82, 1.0);
+  }
+
+  // ---- sky: the photo's sky by day, a drawn sky with sun, moon and stars at dusk and night
+  vec2 qs = p + uCam*uPivot;
+  float as = texture(uSky, qs).r;
+  vec3 plate = mix(texture(uFill, qs).rgb, texture(uPhoto, qs).rgb, smoothstep(0.9, 1.0, as));
+  vec3 sky = mix(grade(plate), drawnSky(qs, aspect), uSkyMix);
+  // thin clouds drifting across
+  vec2 cq = vec2(qs.x*2.6 - uTime*0.0035, qs.y*8.0);
+  float cl = smoothstep(0.58 - 0.25*uCloud, 0.92, fbm(cq + fbm(cq*0.7, 3), 5))*uCloud;
+  vec3 cloudCol = mix(uZenith*1.6 + uHorizon*0.25, uHorizon*0.9 + uGlow*0.8, clamp(uSkyMix*1.2, 0.0, 1.0));
+  cloudCol = mix(grade(vec3(0.85, 0.88, 0.9)), cloudCol, uSkyMix);
+  // stars
+  vec2 sp = qs*uImg;
+  vec2 sc = floor(sp/5.0);
+  float sh1 = h12(sc);
+  float star = 0.0;
+  if (sh1 < 0.05){
+    vec2 so = (sc + 0.2 + 0.6*vec2(h12(sc + 7.1), h12(sc + 3.7)))*5.0;
+    float rr = length(sp - so);
+    float mag = pow(h12(sc + 11.3), 3.0);
+    star = exp(-rr*rr/0.35)*(0.15 + 1.4*mag)*(0.8 + 0.2*sin(uTime*3.0 + sh1*400.0));
+  }
+  sky += star*uStars*vec3(0.95, 0.97, 1.0);
+  // moon with its real phase
+  vec2 mv = (qs - uMoonPos)*vec2(aspect, 1.0)/0.012;
+  float mr = length(mv);
+  if (mr < 1.25 && uMoonVis > 0.0){
+    float edge = smoothstep(1.0, 0.94, mr);
+    vec3 n = vec3(mv.x, -mv.y, sqrt(max(0.0, 1.0 - mr*mr)));
+    float a = 6.2831853*uMoonPhase.x;
+    vec3 L = vec3(sin(a), 0.0, -cos(a));   // 0.25: first quarter, lit on the right
+    float lit = smoothstep(-0.05, 0.12, dot(n, L));
+    float maria = 0.82 + 0.18*vnoise(mv*3.0 + 4.0);
+    sky = mix(sky, vec3(0.92, 0.94, 1.0)*(0.035 + 1.1*lit*maria), edge*uMoonVis);
+    sky += vec3(0.5, 0.55, 0.7)*0.08*exp(-mr*0.9)*uMoonVis;
+  } else {
+    sky += vec3(0.5, 0.55, 0.7)*0.08*exp(-mr*0.9)*uMoonVis;
+  }
+  // sun disc when it sits in the open sky
+  vec2 sv = (qs - uSunPos)*vec2(aspect, 1.0);
+  sky += uSunCol*smoothstep(0.0115, 0.0095, length(sv))*uSunVis*2.5;
+  sky = mix(sky, cloudCol, cl);
+
+  col = mix(col, sky, alpha);
+
+  // ---- lights at night: windows, lamps, the far coast
+  if (uLightsK > 0.001){
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < ${MAXL}; i++){
+      if (i >= uNL) break;
+      vec4 L = uL[i]; vec4 LC = uLC[i];
+      if (LC.a < 0.002) continue;
+      vec2 dv = (q - L.xy)*uImg;
+      float cut = L.z*26.0;
+      if (max(abs(dv.x), abs(dv.y)) > cut) continue;
+      float kind = floor(L.w), seed = fract(L.w);
+      float rad = L.z, r = length(dv);
+      float core, halo;
+      if (kind < 0.5){
+        // a lit window: a soft rectangle, taller than wide, and light spilling on the wall
+        vec2 hs = vec2(rad*0.95, rad*1.7);
+        core = smoothstep(hs.x, hs.x*0.45, abs(dv.x))*smoothstep(hs.y, hs.y*0.6, abs(dv.y));
+        core *= 0.8 + 0.2*smoothstep(hs.y, -hs.y, dv.y);
+        halo = exp(-r/(rad*2.2))*0.10 + exp(-r/(rad*6.0))*0.035;
+      } else {
+        core = exp(-r*r/(rad*rad*0.8));
+        halo = exp(-r/(rad*2.6))*(kind < 1.5 ? 0.25 : 0.12);
+      }
+      halo *= smoothstep(cut, cut*0.55, r);
+      float fl = 0.95 + 0.05*sin(uTime*(1.1 + seed*2.0) + seed*60.0);
+      acc += LC.rgb*(core*1.35 + halo)*LC.a*fl;
+    }
+    col += acc*uLightsK;
+  }
+
+  // gentle highlight shoulder: the photo stays itself at noon
+  col = max(col, 0.0);
+  col = mix(col, 1.0 - 0.2*exp(-(col - 0.8)/0.2), step(0.8, col));
+  vec2 v = s - 0.5;
+  col *= 1.0 - uNight*0.35*dot(v, v);
+  vec3 o = toSRGB(clamp(col, 0.0, 1.0));
+  o += (fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5)/255.0;
+  oC = vec4(o, 1.0);
+}`;
+
+function shader(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) fail('shader: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS));
+gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) fail('link: ' + gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+gl.bindVertexArray(gl.createVertexArray());
+const U = {};
+for (let i = 0, n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS); i < n; i++){
+  const name = gl.getActiveUniform(prog, i).name.replace(/\[0\]$/, '');
+  U[name] = gl.getUniformLocation(prog, name);
+}
+
+async function loadImage(src){
+  const img = new Image(); img.decoding = 'async'; img.src = src;
+  await img.decode();
+  return img;
+}
+function texture(unit, img, {srgb = false, mips = false, red = false} = {}){
+  const t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, srgb ? gl.BROWSER_DEFAULT_WEBGL : gl.NONE);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  if (red) gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, img);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  if (mips){
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    const an = gl.getExtension('EXT_texture_filter_anisotropic');
+    if (an) gl.texParameterf(gl.TEXTURE_2D, an.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(an.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+  } else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  return t;
+}
+
+/* ---------- light of the hour ---------- */
+// sun elevation from the hour, the same path as vittoriodini.it (sunrise 6:15, sunset 19:30, 38° at noon)
+function sunFor(hour){
+  const day = (hour - 6.25)/13.25;
+  if (day >= 0 && day <= 1) return { el: 38*Math.sin(day*Math.PI), t: day, rising: day < 0.5 };
+  const night = ((hour - 19.5 + 24) % 24)/10.75;
+  return { el: -30*Math.sin(night*Math.PI), t: null, rising: night > 0.5 };
+}
+// keyframes by sun elevation: [el, ev, wb r,g,b (stops), sat, con, skyMix, zenith, horizon, glow, lift]
+const K_SET = [
+  [ 60,  0.00, [ 0.00, 0.00, 0.00], 1.00, 1.00, 0.00, [ 70,105,150], [200,215,225], [  0,  0,  0]],
+  [ 22,  0.00, [ 0.03, 0.01,-0.03], 1.00, 1.00, 0.00, [ 70,105,150], [205,212,215], [  0,  0,  0]],
+  [ 12, -0.10, [ 0.12, 0.03,-0.12], 1.04, 1.02, 0.10, [ 64, 96,140], [225,205,170], [ 60, 35, 10]],
+  [  6, -0.35, [ 0.26, 0.04,-0.28], 1.10, 1.04, 0.45, [ 55, 80,125], [240,180,110], [140, 70, 20]],
+  [  2, -0.80, [ 0.38, 0.00,-0.42], 1.06, 1.05, 0.80, [ 48, 65,110], [245,150, 80], [190, 80, 25]],
+  [ -1, -1.35, [ 0.34,-0.05,-0.30], 0.95, 1.04, 0.95, [ 42, 52, 95], [230,120, 75], [150, 55, 25]],
+  [ -4, -2.10, [ 0.02,-0.08, 0.10], 0.82, 1.00, 1.00, [ 28, 36, 78], [165, 95, 90], [ 60, 25, 20]],
+  [ -7, -2.85, [-0.22,-0.08, 0.32], 0.68, 0.96, 1.00, [ 14, 22, 52], [ 80, 62, 88], [ 15,  5,  5]],
+  [-12, -3.80, [-0.35,-0.10, 0.45], 0.45, 0.92, 1.00, [  5, 11, 26], [ 18, 24, 42], [  0,  0,  0]],
+  [-30, -4.20, [-0.38,-0.10, 0.48], 0.35, 0.90, 1.00, [  3,  8, 19], [ 10, 15, 28], [  0,  0,  0]]
+];
+// dawn: cooler, pinker
+const K_RISE = K_SET.map(r => r.slice());
+K_RISE[3] = [  6, -0.30, [ 0.16, 0.03,-0.12], 1.05, 1.03, 0.45, [ 70, 92,140], [235,190,160], [120, 70, 60]];
+K_RISE[4] = [  2, -0.70, [ 0.22, 0.00,-0.15], 1.00, 1.03, 0.80, [ 60, 78,125], [240,165,150], [170, 85, 70]];
+K_RISE[5] = [ -1, -1.25, [ 0.14,-0.04,-0.02], 0.92, 1.02, 0.95, [ 48, 60,110], [215,140,140], [110, 55, 55]];
+K_RISE[6] = [ -4, -2.00, [-0.05,-0.07, 0.18], 0.80, 1.00, 1.00, [ 30, 40, 85], [150,110,130], [ 40, 20, 25]];
+
+const lin = v => { v /= 255; return v <= 0.04045 ? v/12.92 : Math.pow((v + 0.055)/1.055, 2.4); };
+const linRGB = a => a.map(lin);
+const mix = (a, b, f) => a + (b - a)*f;
+const mix3 = (a, b, f) => [0, 1, 2].map(i => mix(a[i], b[i], f));
+function keyAt(K, el){
+  if (el >= K[0][0]) return K[0];
+  for (let i = 1; i < K.length; i++){
+    if (el >= K[i][0]){
+      const a = K[i], b = K[i - 1], f = (el - a[0])/(b[0] - a[0]);
+      return [el, mix(a[1], b[1], f), mix3(a[2], b[2], f), mix(a[3], b[3], f), mix(a[4], b[4], f), mix(a[5], b[5], f),
+              mix3(linRGB(a[6]), linRGB(b[6]), f).map(x => x*255), mix3(linRGB(a[7]), linRGB(b[7]), f).map(x => x*255),
+              mix3(linRGB(a[8]), linRGB(b[8]), f).map(x => x*255), true];
+    }
+  }
+  return K[K.length - 1];
+}
+function toLin(row){ return row[9] ? row.map((v, i) => i >= 6 && i <= 8 ? v.map(x => x/255) : v) :
+                                     row.map((v, i) => i >= 6 && i <= 8 ? linRGB(v) : v); }
+function lightFor(hour){
+  const sun = sunFor(hour);
+  const a = toLin(keyAt(K_SET, sun.el)), b = toLin(keyAt(K_RISE, sun.el));
+  const w = sun.rising ? 1 : 0;
+  const pick = (i) => Array.isArray(a[i]) ? mix3(a[i], b[i], w) : mix(a[i], b[i], w);
+  return { sun, ev: pick(1), wb: pick(2), sat: pick(3), con: pick(4), skyMix: pick(5), zenith: pick(6), horizon: pick(7), glow: pick(8) };
+}
+function smooth(e0, e1, x){ const t = Math.min(1, Math.max(0, (x - e0)/(e1 - e0))); return t*t*(3 - 2*t); }
+function moonPhase(date){
+  const synodic = 29.530588853, ref = Date.UTC(2000, 0, 6, 18, 14)/86400000;
+  const ph = ((date.getTime()/86400000 - ref)/synodic) % 1;
+  return (ph + 1) % 1;                                   // 0 new, 0.5 full
+}
+
+/* ---------- state ---------- */
+const state = { hour: null, pinned: false, weather: { cloud: 0.18, wind: 1 }, t0: performance.now(), frozen: null };
+if (QS.has('hour')) { state.hour = parseFloat(QS.get('hour')); state.pinned = true; }
+if (QS.has('t')) state.frozen = parseFloat(QS.get('t'));
+if (QS.has('tools')) document.body.classList.add('tools');
+const hr = document.getElementById('hr'), hv = document.getElementById('hv');
+hr.addEventListener('input', () => { state.hour = parseFloat(hr.value); state.pinned = true; });
+
+const LIGHT_COL = [[1.0, 0.72, 0.42], [1.0, 0.56, 0.22], [1.0, 0.78, 0.55]];
+const lights = LIGHT_PX.map((l, i) => {
+  let s = 977 + i*7919; const r = () => { s = (s*16807) % 2147483647; return s/2147483647; };
+  r();
+  const kind = l[3];
+  return { x: l[0]/SCENE.w, y: l[1]/SCENE.h, rad: l[2], kind,
+           onEl: kind === 1 ? -1.0 - r()*1.5 : -0.8 - r()*6.5,
+           off: kind === 0 && r() > 0.45 ? 22.8 + r()*3.8 : 99,
+           col: LIGHT_COL[kind].map(c => c*(0.9 + 0.2*r())), seed: r(),
+           gain: kind === 2 ? 0.9 : kind === 1 ? 1.3 : 1.0 };
+});
+
+function frame(now){
+  const t = state.frozen !== null ? state.frozen : (now - state.t0)/1000;
+  const d = new Date();
+  const hour = state.hour !== null ? state.hour : d.getHours() + d.getMinutes()/60 + d.getSeconds()/3600;
+  const L = lightFor(hour);
+  const el = L.sun.el;
+  hv.textContent = hour.toFixed(2) + ' h · ' + el.toFixed(1) + '°';
+  if (!state.pinned) hr.value = hour;
+
+  // canvas at device resolution
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = Math.max(2, Math.round(innerWidth*dpr)), H = Math.max(2, Math.round(innerHeight*dpr));
+  if (canvas.width !== W || canvas.height !== H){ canvas.width = W; canvas.height = H; }
+  gl.viewport(0, 0, W, H);
+
+  // cover crop around the focal point, with a little overscan for the drift
+  const A = W/H, a = SCENE.w/SCENE.h, zoom = 1.025;
+  let vis = A > a ? [1, a/A] : [A/a, 1];
+  vis = vis.map(v => v/zoom);
+  const f = A >= 1 ? SCENE.focal.landscape : SCENE.focal.portrait;
+  const off = [f[0]*(1 - vis[0]), f[1]*(1 - vis[1])];
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const amp = reduce ? 0 : 0.0045;
+  const cam = [amp*Math.sin(2*Math.PI*t/47), amp*0.45*Math.sin(2*Math.PI*t/61 + 1.3)];
+
+  // sun position on the authored arc; moon over the far coast at night
+  let sunPos = [2, 2], sunVis = 0;
+  if (el > -4){
+    const set = !L.sun.rising, P = set ? SCENE.sunSet : SCENE.sunRise;
+    const k = Math.max(0, el)/12;
+    sunPos = [P[0] - (set ? 0.25 : -0.2)*Math.min(1, k), SCENE.horizonY - 0.012*el - 0.0];
+    sunVis = smooth(-4, 0, el)*(1 - smooth(8, 18, el));
+  }
+  const night = smooth(-4, -12, el);
+  const sunCol = [1, 0.35 + 0.55*smooth(0, 20, el), 0.1 + 0.7*smooth(2, 30, el)];
+  const moonVis = smooth(-2, -8, el);
+  const phase = moonPhase(d);
+
+  gl.uniform2f(U.uRes, W, H);
+  gl.uniform2f(U.uImg, SCENE.w, SCENE.h);
+  gl.uniform2f(U.uOff, off[0], off[1]);
+  gl.uniform2f(U.uVis, vis[0], vis[1]);
+  gl.uniform2f(U.uCam, cam[0], cam[1]);
+  gl.uniform1f(U.uTime, reduce ? 0 : t % 3600);
+  gl.uniform1f(U.uPivot, SCENE.pivot);
+  gl.uniform1f(U.uWind, reduce ? 0 : 1.0 + 1.5*(state.weather.wind - 1));
+  gl.uniform1f(U.uHorizonY, SCENE.horizonY);
+  gl.uniform1f(U.uEV, L.ev);
+  gl.uniform3fv(U.uWB, L.wb);
+  gl.uniform1f(U.uSat, L.sat);
+  gl.uniform1f(U.uCon, L.con);
+  gl.uniform1f(U.uSkyMix, L.skyMix);
+  gl.uniform3fv(U.uZenith, L.zenith);
+  gl.uniform3fv(U.uHorizon, L.horizon);
+  gl.uniform3fv(U.uGlow, L.glow);
+  gl.uniform3fv(U.uLift, [0.004*night, 0.006*night, 0.012*night]);
+  gl.uniform1f(U.uNight, night);
+  gl.uniform1f(U.uStars, smooth(-6, -14, el)*(1 - state.weather.cloud));
+  gl.uniform1f(U.uCloud, state.weather.cloud);
+  gl.uniform2f(U.uSunPos, sunPos[0], sunPos[1]);
+  gl.uniform3fv(U.uSunCol, sunCol);
+  gl.uniform1f(U.uSunVis, sunVis);
+  gl.uniform2f(U.uMoonPos, SCENE.moon[0], SCENE.moon[1]);
+  gl.uniform2f(U.uMoonPhase, phase, phase < 0.5 ? 1 : 0);
+  gl.uniform1f(U.uMoonVis, moonVis);
+  gl.uniform1f(U.uWarmSea, smooth(14, 3, el)*(1 - 0.6*night));
+  gl.uniform1f(U.uGlint, smooth(-2, 14, el));
+
+  // lights: on as the dusk deepens, some houses go dark late at night
+  const late = hour < 12 ? hour + 24 : hour;
+  const lk = smooth(1, -3, el);
+  const ubuf = new Float32Array(lights.length*4), cbuf = new Float32Array(lights.length*4);
+  lights.forEach((l, i) => {
+    const on = smooth(l.onEl + 0.6, l.onEl - 0.6, el)*(1 - smooth(l.off, l.off + 0.25, late));
+    ubuf.set([l.x, l.y, l.rad, l.kind + l.seed*0.99], i*4);
+    cbuf.set([l.col[0]*l.gain, l.col[1]*l.gain, l.col[2]*l.gain, on], i*4);
+  });
+  gl.uniform4fv(U.uL, ubuf);
+  gl.uniform4fv(U.uLC, cbuf);
+  gl.uniform1i(U.uNL, lights.length);
+  gl.uniform1f(U.uLightsK, lk*(0.35 + 0.65*night));
+
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+let stopped = false, ready = false;
+function stop(reason){
+  if (stopped) return; stopped = true;
+  if (EMBED) window.parent.postMessage({type:'site:scene-error', reason: String(reason)}, '*');
+}
+function loop(now){
+  if (stopped) return;
+  try {
+    frame(now);
+    if (!ready){
+      ready = true; document.body.dataset.ready = '1';
+      if (EMBED) window.parent.postMessage({type:'site:scene-ready'}, location.origin === 'null' ? '*' : location.origin);
+    }
+    if (QS.has('still')) return;
+  } catch (e){ stop(e && e.message || e); return; }
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('message', e => {
+  if (e.source !== window.parent) return;
+  if (/^https?:$/.test(location.protocol) && e.origin !== location.origin) return;
+  const m = e.data || {};
+  if (m.type === 'site:time' && Number.isFinite(m.hour)){
+    if (!state.pinned) state.hour = ((m.hour % 24) + 24) % 24;
+    if (m.weather && Number.isFinite(m.weather.cloud)) state.weather.cloud = Math.min(1, Math.max(0.1, m.weather.cloud));
+    if (QS.has('still')) frame(performance.now());
+  }
+  // "Cambia il meteo": for now just the hour slider; the full panel comes in the next step
+  if (m.type === 'site:tools') document.body.classList.toggle('tools', !!m.open);
+});
+
+// test hook: render a given hour and moment deterministically
+window.__scene = {
+  set(hour, t){ state.hour = hour; state.pinned = true; if (t !== undefined) state.frozen = t; frame(performance.now()); },
+  lights: () => lights.length
+};
+
+try {
+  const [photo, maps, sky, fill] = await Promise.all([
+    loadImage(SCENE.photo), loadImage('img/maps.png'), loadImage('img/sky.png'), loadImage('img/skyfill.png')]);
+  gl.useProgram(prog);
+  texture(0, photo, {srgb: true, mips: true}); gl.uniform1i(U.uPhoto, 0);
+  texture(1, maps); gl.uniform1i(U.uMaps, 1);
+  texture(2, sky, {red: true}); gl.uniform1i(U.uSky, 2);
+  texture(3, fill, {srgb: true}); gl.uniform1i(U.uFill, 3);
+  requestAnimationFrame(loop);
+} catch (e){ stop(e && e.message || e); }
+addEventListener('error', e => stop(e.error || e.message));
+addEventListener('unhandledrejection', e => stop(e.reason));
+</script>
+</body>
+</html>
