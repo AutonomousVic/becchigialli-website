@@ -18,7 +18,7 @@
   @font-face { font-family:'Inter Tight'; font-weight:500; font-display:swap; src:url(fonts/inter-tight-latin-500-normal.woff2) format('woff2'); }
   @font-face { font-family:'Inter Tight'; font-weight:600; font-display:swap; src:url(fonts/inter-tight-latin-600-normal.woff2) format('woff2'); }
 
-  :root { --yellow:#FFBF00; --ink:#eef2f8; --edge:#0b1a24; }
+  :root { --yellow:#FFBF00; --ink:#eef2f8; --edge:#0b1a24; color-scheme:dark; }
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { height:100%; overflow:hidden; background:var(--edge); }
   html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
@@ -90,6 +90,7 @@
           max-width:min(540px,72vw); opacity:0; visibility:hidden; transform:translateY(6px); pointer-events:none;
           transition:opacity .6s .15s, transform .6s .15s, visibility .6s; }
   body.unlocked #info { opacity:1; visibility:visible; transform:none; }
+  body.unlocked.tuning #info { opacity:0; visibility:hidden; }   /* the weather panel gets the whole scene */
   #info a { pointer-events:auto; }
   #greet { font-weight:300; font-size:clamp(15px,1.5vw,19px); letter-spacing:.02em; opacity:.92; }
   #name { font-family:'Cormorant Garamond',Georgia,serif; font-weight:500; font-size:clamp(22px,2.5vw,33px); letter-spacing:.1em;
@@ -144,7 +145,7 @@
     #lock { align-items:flex-end; padding:0 18px calc(136px + env(safe-area-inset-bottom)); }
     #clock { font-size:24px; } .amb { font-size:11.5px; margin-top:3px; } #date { display:none; } #lang { margin-top:6px; }
     #login { padding:28px 22px 20px; }
-    #tune { display:none; }
+    #tune { left:calc(18px + env(safe-area-inset-left)); bottom:calc(20px + env(safe-area-inset-bottom)); opacity:.4; font-size:11.5px; padding:6px 0 2px; }
     #info { top:calc(22px + env(safe-area-inset-top)); left:20px; max-width:calc(100vw - 40px); }
     body::before { background:linear-gradient(to bottom, rgba(4,14,22,.74), rgba(4,14,22,.46) 30%, rgba(4,14,22,.12) 52%, transparent 64%); }
     #links { gap:9px 22px; }
@@ -345,7 +346,18 @@ const frame = $('scene-frame');
   if ([...pass].length) frame.src = 'scene.html?' + pass;
 }
 let sceneReady = false;
-function sceneMessage(m){ if (frame.contentWindow) frame.contentWindow.postMessage(m, location.origin === 'null' ? '*' : location.origin); }
+// the scene lives in a frame that knows nothing of the notch: hand it the page's safe areas
+const insetProbe = document.createElement('div');
+insetProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+document.body.appendChild(insetProbe);
+function safeInsets(){
+  const cs = getComputedStyle(insetProbe);
+  return { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
+}
+// window.origin is the page's real origin: 'null' inside a sandboxed frame, where location.origin still
+// shows the address. Messages carry nothing private (hour, weather, "ready"), so an opaque origin takes '*'.
+const ORIGIN = window.origin || location.origin;
+function sceneMessage(m){ if (frame.contentWindow) frame.contentWindow.postMessage(m, ORIGIN === 'null' ? '*' : ORIGIN); }
 function syncScene(){
   const w = where.weather;
   sceneMessage({ type: 'site:time', hour: visitorHour(), weather: w ? { cloud: w.cloud_cover/100, wind: w.wind_speed_10m } : null });
@@ -354,7 +366,7 @@ frame.addEventListener('load', () => { syncScene(); setTimeout(() => { if (!scen
 setInterval(syncScene, 30000);
 window.addEventListener('message', e => {
   if (e.source !== frame.contentWindow) return;
-  if (location.origin !== 'null' && e.origin !== location.origin) return;
+  if (ORIGIN !== 'null' && e.origin !== ORIGIN) return;
   const m = e.data || {};
   if (m.type === 'site:scene-ready'){ sceneReady = true; frame.style.opacity = '1'; $('tune').classList.add('on'); syncScene(); document.body.dataset.ready = '1'; }
   if (m.type === 'site:scene-error'){ frame.style.display = 'none'; document.body.dataset.ready = '1'; }
@@ -367,18 +379,47 @@ function setTune(open, fromScene){
   document.body.classList.toggle('tuning', open);
   $('tune').classList.toggle('active', open);
   $('tune').setAttribute('aria-expanded', String(open));
-  if (!fromScene) sceneMessage({ type: 'site:tools', open });
+  if (!fromScene) sceneMessage({ type: 'site:tools', open, insets: safeInsets() });
 }
 $('tune').addEventListener('click', () => { if (sceneReady) setTune(!tuneOpen); });
 
 /* ---------- the lock (scenographic: only a salted fingerprint of the password lives here) ---------- */
+function sha256js(text){
+  const primes = []; for (let n = 2; primes.length < 64; n++) if (primes.every(p => n % p)) primes.push(n);
+  const K = primes.map(p => Math.floor((Math.cbrt(p) % 1)*4294967296));
+  const h = primes.slice(0, 8).map(p => Math.floor((Math.sqrt(p) % 1)*4294967296));
+  const bytes = new TextEncoder().encode(text), bits = bytes.length*8;
+  const buf = new Uint8Array(((bytes.length + 9 + 63) >> 6) << 6); buf.set(bytes); buf[bytes.length] = 0x80;
+  const dv = new DataView(buf.buffer); dv.setUint32(buf.length - 8, Math.floor(bits/4294967296)); dv.setUint32(buf.length - 4, bits >>> 0);
+  const w = new Uint32Array(64), rr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let o = 0; o < buf.length; o += 64){
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + 4*i);
+    for (let i = 16; i < 64; i++){
+      const s0 = rr(w[i-15], 7) ^ rr(w[i-15], 18) ^ (w[i-15] >>> 3), s1 = rr(w[i-2], 17) ^ rr(w[i-2], 19) ^ (w[i-2] >>> 10);
+      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i++){
+      const t1 = (hh + (rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+      const t2 = ((rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    [a, b, c, d, e, f, g, hh].forEach((v, i) => { h[i] = (h[i] + v) >>> 0; });
+  }
+  return h.map(v => v.toString(16).padStart(8, '0')).join('');
+}
 async function sha256hex(s){
-  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+  try {
+    if (window.crypto && crypto.subtle){
+      const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+      return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (e) {}
+  return sha256js(s);
 }
 async function check(pw){
   const m = /salt=([^;]+);sha256=([0-9a-f]+)/.exec(document.querySelector('meta[name=bg-auth]').content);
-  if (!m || !window.crypto || !crypto.subtle) return false;
+  if (!m) return false;
   return (await sha256hex(m[1] + '\n' + pw.trim().normalize('NFC'))) === m[2];
 }
 /* everything behind the password lives in content.json, fetched only after the lock opens:
@@ -386,6 +427,8 @@ async function check(pw){
 let content = null;
 async function loadContent(){
   if (content) return content;
+  const inline = document.getElementById('content-inline');
+  if (inline){ content = JSON.parse(inline.textContent); return content; }
   const r = await fetch('content.json', { cache: 'no-cache' });
   content = await r.json();
   return content;

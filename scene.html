@@ -7,21 +7,32 @@
 <style>
   html,body{margin:0;height:100%;width:100%;overflow:hidden;background:#0b1a24}
   canvas{display:block;width:100%;height:100%;pointer-events:none}
-  #hud{position:fixed;right:16px;top:16px;font:12px/1.4 ui-monospace,Menlo,monospace;color:#cfe3ee;
-       background:rgba(10,16,22,.7);padding:6px 9px;border-radius:6px;display:none}
+  /* "Cambia il meteo", first version: the hour and the wind. The glass of the site's cards. */
+  #hud{position:fixed;z-index:5;top:calc(var(--sa-t,0px) + 16px);right:calc(var(--sa-r,0px) + 16px);
+       width:min(300px,calc(100vw - 32px - var(--sa-l,0px) - var(--sa-r,0px)));display:none;box-sizing:border-box;
+       padding:14px 16px 16px;border-radius:14px;color:#eef2f8;font:13px/1.3 'Inter Tight',system-ui,-apple-system,'Segoe UI',sans-serif;
+       background:rgba(14,24,40,.52);-webkit-backdrop-filter:blur(16px) saturate(1.2);backdrop-filter:blur(16px) saturate(1.2);
+       border:1px solid rgba(255,255,255,.2);box-shadow:0 20px 50px rgba(0,0,0,.35);text-shadow:0 1px 6px rgba(0,0,0,.4)}
   body.tools #hud{display:block}
-  #hud input{width:260px;vertical-align:middle}
+  #hud .row{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 2px;letter-spacing:.04em}
+  #hud .row b{font-weight:500;font-variant-numeric:tabular-nums}
+  #hud .row + input{margin-bottom:12px}#hud input:last-child{margin-bottom:0}
+  #hud input{display:block;width:100%;height:28px;margin:0;background:none;accent-color:#FFBF00;touch-action:pan-x}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud">ora <input id="hr" type="range" min="0" max="24" step="0.05"> <b id="hv"></b><br>vento <input id="wd" type="range" min="0" max="18" step="0.5"> <b id="wv"></b></div>
+<div id="hud">
+  <div class="row"><span>Ora</span><b id="hv"></b></div><input id="hr" type="range" min="0" max="24" step="0.05" aria-label="Ora">
+  <div class="row"><span>Vento</span><b id="wv"></b></div><input id="wd" type="range" min="0" max="18" step="0.5" aria-label="Vento">
+</div>
 <script type="module">
 /* The background of becchigialli.it: one photograph of the Paraggi cove, split into layers
    (sky, sea, foreground leaves, depth) and relit for the visitor's hour. Plain WebGL2. */
 
 const QS = new URLSearchParams(location.search);
 const EMBED = window.parent !== window;
+const ORIGIN = window.origin || location.origin;   // 'null' inside a sandboxed frame
 const IS_PHONE = matchMedia('(pointer: coarse)').matches || innerWidth <= 820;
 
 function fail(reason){
@@ -435,7 +446,7 @@ function frame(now){
   const hour = state.hour !== null ? state.hour : d.getHours() + d.getMinutes()/60 + d.getSeconds()/3600;
   const L = lightFor(hour);
   const el = L.sun.el;
-  hv.textContent = hour.toFixed(2) + ' h · ' + el.toFixed(1) + '°';
+  hv.textContent = String(Math.floor(hour)).padStart(2, '0') + ':' + String(Math.floor((hour % 1)*60)).padStart(2, '0');
   if (!state.pinned) hr.value = hour;
 
   // canvas at device resolution
@@ -531,7 +542,7 @@ function loop(now){
     frame(now);
     if (!ready){
       ready = true; document.body.dataset.ready = '1';
-      if (EMBED) window.parent.postMessage({type:'site:scene-ready'}, location.origin === 'null' ? '*' : location.origin);
+      if (EMBED) window.parent.postMessage({type:'site:scene-ready'}, ORIGIN === 'null' ? '*' : ORIGIN);
     }
     if (QS.has('still')) return;
   } catch (e){ stop(e && e.message || e); return; }
@@ -540,7 +551,7 @@ function loop(now){
 
 window.addEventListener('message', e => {
   if (e.source !== window.parent) return;
-  if (/^https?:$/.test(location.protocol) && e.origin !== location.origin) return;
+  if (/^https?:$/.test(location.protocol) && e.origin !== ORIGIN) return;
   const m = e.data || {};
   if (m.type === 'site:time' && Number.isFinite(m.hour)){
     if (!state.pinned) state.hour = ((m.hour % 24) + 24) % 24;
@@ -549,7 +560,11 @@ window.addEventListener('message', e => {
     if (QS.has('still')) frame(performance.now());
   }
   // "Cambia il meteo": for now just the hour slider; the full panel comes in the next step
-  if (m.type === 'site:tools') document.body.classList.toggle('tools', !!m.open);
+  if (m.type === 'site:tools'){
+    const ins = m.insets || {};
+    for (const k of ['t', 'r', 'b', 'l']) document.documentElement.style.setProperty('--sa-' + k, (Number.isFinite(ins[k]) ? ins[k] : 0) + 'px');
+    document.body.classList.toggle('tools', !!m.open);
+  }
 });
 
 // test hook: render a given hour and moment deterministically
