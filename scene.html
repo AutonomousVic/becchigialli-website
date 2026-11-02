@@ -31,7 +31,7 @@ function fail(reason){
 
 /* ---------- scene description (photo space: x right, y down, 0..1) ---------- */
 const SCENE = {
-  photo: 'img/caletta.jpg', w: 1086, h: 1200,
+  photo: 'img/caletta.jpg', plate: 'img/plate.jpg', w: 1086, h: 1200,
   horizonY: 373/1200,                 // the far shoreline
   focal: { landscape: [0.46, 0.42], portrait: [0.43, 0.5] },
   pivot: 0.5,                         // disparity that stays put while the camera drifts
@@ -80,9 +80,9 @@ void main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position
 const MAXL = 96;
 const FS = `#version 300 es
 precision highp float;
-uniform sampler2D uPhoto, uMaps, uSky, uFill;
+uniform sampler2D uPhoto, uPlate, uMaps, uSky, uFill, uLeafA, uLeafRGB;
 uniform vec2 uRes, uImg, uOff, uVis, uCam;
-uniform float uTime, uPivot, uWind, uWindPx, uWaveK, uRefrPx, uHorizonY;
+uniform float uTime, uPivot, uWind, uWindPx, uFlow, uDetailK, uHorizonY;
 uniform float uEV, uSat, uCon, uSkyMix, uNight, uStars, uCloud, uSunVis, uMoonVis, uLightsK, uWarmSea, uGlint;
 uniform vec3 uWB, uZenith, uHorizon, uGlow, uSunCol, uLift;
 uniform vec2 uSunPos, uMoonPos, uMoonPhase;
@@ -129,81 +129,87 @@ void main(){
   vec2 p = uOff + s*uVis;
   float aspect = uImg.x/uImg.y;
 
-  // parallax: each surface moves with its disparity around the pivot
+  // parallax: each surface moves with its disparity around the pivot. Next to a leaf the
+  // background keeps the depth of the water behind it, the leaves are a layer of their own.
   float d0 = texture(uMaps, p).r;
-  vec2 q = p - uCam*(d0 - uPivot);
+  vec2 q = p - uCam*((d0 > 0.8 ? 0.68 : d0) - uPivot);
   vec4 m = texture(uMaps, q);
   vec2 ip = q*uImg;
 
   // wind in the branches: the whole branch swings slowly, the leaves shiver on top of it, and
   // gusts sweep across the picture. The amplitude map is still where a branch enters the frame.
-  if (m.g > 0.004){
+  vec2 disp = vec2(0.0);
+  float sw = texture(uMaps, p).g;
+  if (sw > 0.004){
     float t = uTime;
-    float front = sin(t*0.31 - q.x*4.0 + q.y*1.5);
-    float gust = (0.55 + 0.45*front)*(0.8 + 0.2*sin(t*1.7 + q.y*9.0));
-    float swing = sin(t*(0.9 + 0.25*uWind) + q.y*3.0 + q.x*2.0) + 0.45*sin(t*(1.9 + 0.4*uWind) + q.x*7.0 + 1.3);
-    vec2 shiver = vec2(vnoise(ip*0.035 + vec2(t*(1.6 + uWind), 1.7)), vnoise(ip*0.035 + vec2(4.2, t*(1.4 + uWind)))) - 0.5;
-    vec2 disp = vec2(swing, -0.35*swing*swing + 0.25*swing)*gust*uWindPx + shiver*(1.2 + 1.8*uWind);
-    q += m.g*disp/uImg;
+    float front = sin(t*0.31 - p.x*4.0 + p.y*1.5);
+    float gust = (0.55 + 0.45*front)*(0.8 + 0.2*sin(t*1.7 + p.y*9.0));
+    float swing = sin(t*(0.9 + 0.25*uWind) + p.y*3.0 + p.x*2.0) + 0.45*sin(t*(1.9 + 0.4*uWind) + p.x*7.0 + 1.3);
+    vec2 pp = p*uImg;
+    vec2 shiver = vec2(vnoise(pp*0.035 + vec2(t*(1.6 + uWind), 1.7)), vnoise(pp*0.035 + vec2(4.2, t*(1.4 + uWind)))) - 0.5;
+    disp = (vec2(swing, -0.35*swing*swing + 0.25*swing)*gust*uWindPx + shiver*(1.2 + 1.8*uWind))*sw;
+  }
+  // the trees on the hill bend in place, a pixel or two; the sea never follows the branches
+  q += disp*(1.0 - smoothstep(0.07, 0.12, sw))*(1.0 - smoothstep(0.0, 0.2, m.b))/uImg;
+  // the foreground leaves swing over the plate, the photo with them painted out
+  vec2 qL = p - uCam*(1.0 - uPivot) - disp/uImg;
+  float leafA = texture(uLeafA, qL).r;
+  vec3 leaf = texture(uLeafRGB, qL).rgb;
+
+  // ---- the sea. The photo already holds its ripples: split it into a still base (the sea floor,
+  // its colours) and the detail finer than ~4 photo pixels (ripples and glints), and let only the
+  // detail travel, the way the wind pushes small waves across a bay. Two copies half a cycle apart
+  // take turns, so the drift never jumps; a slow noise shifts the cycle from place to place.
+  vec3 c = texture(uPlate, q).rgb;
+  float drift = m.b;
+  float sparkle = 0.0;
+  if (drift > 0.003){
+    const float LOD = 2.0;
+    float near = clamp((m.r - 0.1)/0.6, 0.0, 1.0);
+    vec2 dir = normalize(mix(vec2(-1.0, 0.06), vec2(-0.72, 0.62), near));   // along the bay, towards the shore
+    float rot = (vnoise(ip*0.0035 + 3.1) - 0.5)*0.9;
+    dir = vec2(dir.x*cos(rot) - dir.y*sin(rot), dir.x*sin(rot) + dir.y*cos(rot));
+    // a short cycle and a slow drift keep the two copies a few pixels apart: no double image
+    float speed = (1.2 + 5.0*near)*uFlow;                                    // photo pixels per second
+    const float T = 2.0;
+    float ph = uTime/T + 0.45*vnoise(ip*0.004 + 11.0);
+    float f1 = fract(ph), f2 = fract(ph + 0.5);
+    float w1 = 1.0 - abs(2.0*f1 - 1.0), w2 = 1.0 - w1;
+    vec2 qa = q - dir*speed*T*(f1 - 0.5)/uImg, qb = q - dir*speed*T*(f2 - 0.5)/uImg;
+    // only open-water detail travels: nothing is dragged in from the sea floor, the rocks, the boom
+    vec3 dA = (texture(uPlate, qa).rgb - textureLod(uPlate, qa, LOD).rgb)*smoothstep(0.6, 0.9, texture(uMaps, qa).b);
+    vec3 dB = (texture(uPlate, qb).rgb - textureLod(uPlate, qb, LOD).rgb)*smoothstep(0.6, 0.9, texture(uMaps, qb).b);
+    vec3 dMove = (w1*dA + w2*dB)/sqrt(w1*w1 + w2*w2);                       // keeps the contrast through the blend
+    // the glints the photo already has twinkle in the sun
+    float hl = smoothstep(0.03, 0.14, dot(dMove, LUM));
+    dMove *= mix(1.0, 0.6 + 0.8*vnoise(ip*0.45 + vec2(uTime*2.6, -uTime*1.9)), hl*uGlint)*uDetailK*1.08;
+    // what stays put quivers by under half a pixel, as seen through moving water
+    vec2 qv = q + (vec2(vnoise(ip*0.06 + vec2(uTime*0.8, 0.0)), vnoise(ip*0.06 + vec2(5.0, -uTime*0.7))) - 0.5)*0.9/uImg;
+    vec3 dStill = texture(uPlate, qv).rgb - textureLod(uPlate, qv, LOD).rgb;
+    // Open water (drift 1) trades its still ripples for the travelling ones. Over the visible sea
+    // floor (drift 0.5) the rocks keep all their detail: the light on them just breathes a little,
+    // and the ripples coming in from the open water lap over them.
+    float open = smoothstep(0.6, 0.95, drift);
+    float floorK = (1.0 - open)*smoothstep(0.1, 0.5, drift);
+    dStill *= 1.0 + floorK*0.35*(vnoise(ip*0.05 + vec2(uTime*0.9, -uTime*0.6)) - 0.5)*2.0*uGlint;
+    c = max(textureLod(uPlate, q, LOD).rgb + mix(dStill, dMove, open) + dMove*floorK*0.5, 0.0);
+    sparkle = max(dot(dMove, LUM), 0.0);
   }
 
-  // the sea: waves travel across the bay. The picture is a view from above, so a patch of water
-  // at disparity d lies about 1/d away: waves shrink and slow down towards the far coast.
-  float wm = texture(uMaps, q).b;
-  vec2 slope = vec2(0.0);
-  if (wm > 0.01){
-    float d = max(m.r, 0.06);
-    vec2 w = vec2((q.x - 0.5)*aspect, 1.0)*60.0/d;                  // metres, roughly
-    float foot = 0.045/(d*d) + 0.06/d;                              // metres covered by one photo pixel
-    float t = uTime*(0.75 + 0.15*uWind);
-    const int NW = 6;
-    vec3 WV[NW] = vec3[](vec3(9.0, 0.35, 0.095), vec3(5.6, -0.55, 0.085), vec3(3.4, 1.15, 0.075),
-                         vec3(2.1, 0.05, 0.065), vec3(1.3, -1.05, 0.055), vec3(0.8, 0.7, 0.045));
-    for (int i = 0; i < NW; i++){
-      float L = WV[i].x, k = 6.2831853/L;
-      vec2 dir = vec2(cos(WV[i].y), sin(WV[i].y));
-      float fade = clamp(1.0 - 3.0*foot/L, 0.0, 1.0);             // waves under a few pixels would only flicker
-      float ph = dot(dir, w)*k - t*sqrt(9.81*k) + float(i)*1.7;
-      slope += WV[i].z*fade*cos(ph)*dir;
-    }
-    vec2 cw = w*0.35 + vec2(t*0.3, -t*0.2);
-    slope += (vec2(fbm(cw, 3), fbm(cw + 7.3, 3)) - 0.5)*0.12*clamp(1.0 - 2.0*foot, 0.0, 1.0);
-    slope *= uWaveK;
-    // refraction: the rocks and the bottom seen through the moving surface
-    q += wm*slope*vec2(1.0, 0.7)*uRefrPx*(0.25 + d)/uImg;
-  }
-
-  vec3 c = texture(uPhoto, q).rgb;
-  float alpha = texture(uSky, q).r;
+  float alpha = texture(uSky, q).r*(1.0 - leafA);
   vec3 fill = texture(uFill, q).rgb;
   vec3 land = clamp((c - alpha*fill)/max(1.0 - alpha, 0.12), 0.0, 1.0);
+  land = mix(land, leaf, leafA);
   vec3 col = grade(land);
 
-  // light dancing on the sea floor and sparkles where the sun catches the ripples
-  if (wm > 0.01){
-    vec2 cp = ip*0.045;
-    float k = abs(fbm(cp + vec2(uTime*0.35, -uTime*0.21), 3) - fbm(cp*1.1 + vec2(-uTime*0.27, uTime*0.3) + 9.0, 3));
-    float caustic = pow(1.0 - clamp(k*3.2, 0.0, 1.0), 6.0);
-    float shallow = clamp((m.r - 0.25)/0.5, 0.0, 1.0);
-    col *= 1.0 + wm*caustic*0.55*shallow*uGlint;
-    vec2 cell = floor(ip*0.75);
-    float g = h12(cell + floor(uTime*7.0 + h12(cell)*7.0));
-    float glint = step(0.9993, g)*smoothstep(0.45, 0.85, vnoise(ip*0.02 + uTime*0.1))*(1.0 - smoothstep(0.35, 0.7, m.r));
-    col += wm*glint*uGlint*uSunCol*1.1;
-    // light on the waves: faces tilted towards the sky are brighter, the troughs darker
-    float farW = 1.0 - smoothstep(0.1, 0.5, m.r);
-    float facing = clamp(dot(slope, vec2(0.3, -0.95)), -0.45, 0.45);
-    col *= 1.0 + wm*facing*(0.5 + 0.4*farW);
-    col += wm*max(facing, 0.0)*uHorizon*(0.05 + 0.12*farW);
-    col += wm*smoothstep(0.22, 0.4, facing)*uGlint*uSunCol*0.25*(0.3 + farW);
-    // the far sea mirrors the sky at dusk
+  if (drift > 0.003){
     float far = 1.0 - smoothstep(0.10, 0.32, m.r);
-    col = mix(col, col*0.75 + uHorizon*0.30, wm*far*uWarmSea*0.7);
-    // the moon's path on the open water
+    // the far sea mirrors the sky at dusk
+    col = mix(col, col*0.75 + uHorizon*0.30, drift*far*uWarmSea*0.7*(1.0 - leafA));
+    // the moon's path on the open water, sparkling on the photo's own ripples
     float mx = abs(q.x - uMoonPos.x)*aspect;
-    float path = exp(-mx*mx/0.0012)*far*wm;
-    float sh = step(0.975, h12(floor(ip*vec2(0.6, 1.4)) + floor(uTime*5.0)));
-    col += path*uMoonVis*(0.05 + 0.9*sh)*vec3(0.75, 0.82, 1.0);
+    float path = exp(-mx*mx/0.0012)*far*drift*(1.0 - leafA);
+    col += path*uMoonVis*(0.04 + 6.0*sparkle)*vec3(0.75, 0.82, 1.0);
   }
 
   // ---- sky: the photo's sky by day, a drawn sky with sun, moon and stars at dusk and night
@@ -473,8 +479,8 @@ function frame(now){
   if (!state.windPinned) wd.value = state.weather.wind;
   gl.uniform1f(U.uWind, reduce ? 0 : wk);
   gl.uniform1f(U.uWindPx, reduce ? 0 : 4.5*wk + 0.8*wk*wk);       // swing of a branch tip, photo pixels
-  gl.uniform1f(U.uWaveK, reduce ? 0.3 : 0.55 + 0.45*wk);
-  gl.uniform1f(U.uRefrPx, 9.0 + 4.0*wk);
+  gl.uniform1f(U.uFlow, 0.55 + 0.5*wk);                              // how fast the ripples travel
+  gl.uniform1f(U.uDetailK, 0.92 + 0.12*wk);                          // and how crisp they look
   gl.uniform1f(U.uHorizonY, SCENE.horizonY);
   gl.uniform1f(U.uEV, L.ev);
   gl.uniform3fv(U.uWB, L.wb);
@@ -558,10 +564,14 @@ window.__scene = {
 };
 
 try {
-  const [photo, maps, sky, fill] = await Promise.all([
-    loadImage(SCENE.photo), loadImage('img/maps.png'), loadImage('img/sky.png'), loadImage('img/skyfill.png')]);
+  const [photo, maps, sky, fill, plate, leafA, leafRGB] = await Promise.all([
+    loadImage(SCENE.photo), loadImage('img/maps.png'), loadImage('img/sky.png'), loadImage('img/skyfill.png'), loadImage(SCENE.plate),
+    loadImage('img/leaf.png'), loadImage('img/leafrgb.jpg')]);
   gl.useProgram(prog);
   texture(0, photo, {srgb: true, mips: true}); gl.uniform1i(U.uPhoto, 0);
+  texture(4, plate, {srgb: true, mips: true}); gl.uniform1i(U.uPlate, 4);
+  texture(5, leafA, {red: true}); gl.uniform1i(U.uLeafA, 5);
+  texture(6, leafRGB, {srgb: true}); gl.uniform1i(U.uLeafRGB, 6);
   texture(1, maps); gl.uniform1i(U.uMaps, 1);
   texture(2, sky, {red: true}); gl.uniform1i(U.uSky, 2);
   texture(3, fill, {srgb: true}); gl.uniform1i(U.uFill, 3);

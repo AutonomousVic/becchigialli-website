@@ -9,7 +9,7 @@ Il sito di Becchigialli Holding Immobiliare, sul modello di vittoriodini.it: una
 | `index.html` | La pagina: sblocco, ora, alba e tramonto, meteo, orologi delle sedi, menu |
 | `scene.html` | Lo sfondo in WebGL2, caricato come iframe dietro la pagina |
 | `astro.js` | Sole e luna per il luogo di chi visita |
-| `img/` | La foto e le sue mappe (cielo, mare, rami, profondità) |
+| `img/` | La foto e le sue mappe: cielo, profondità, rami (con la foto senza rami dietro), quanto scorre il mare |
 | `fonts/` | Cormorant Garamond e Inter Tight, ospitati sul sito (licenza OFL) |
 | `tools/` | Mappe della foto, impronta della password, screenshot e video di prova |
 
