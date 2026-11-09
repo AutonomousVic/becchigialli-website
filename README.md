@@ -22,9 +22,12 @@ Le immagini in `img/`:
 | :-- | :-- |
 | `plate.webp` | La foto, con i rami in primo piano tolti e il mare ricostruito dietro |
 | `leafrgb.webp`, `leaf.png` | I rami in primo piano: colore e trasparenza |
-| `maps.png` | A metà risoluzione: profondità (R), quanto si muovono i rami (G), quanto scorre il mare (B) |
+| `maps.png` | A metà risoluzione: profondità (R), quanto si muovono i rami (G), quanto ogni scoglio prende l'onda (B) |
 | `sky.png`, `skyfill.png` | Dove c'è cielo, e il cielo da mettere dietro le colline |
 | `poster.webp` | Una copia leggera della foto, mostrata finché la scena non è pronta |
+| `seabed.webp` | Il colore del mare senza increspature: fondale, zone, profondità. Sopra si disegna la superficie |
+| `sea.png` | Dove c'è acqua (R), profondità (G), distanza dalla riva (B) |
+| `objects.webp` | Nuotatore, barca, boa e cima gialla, ritagliati per galleggiare |
 
 ## Anteprima in locale
 
@@ -36,13 +39,13 @@ Poi apri <http://localhost:4173>. Con `?hour=20.5` si vede un'ora a scelta. Su `
 
 ## Il movimento
 
-La camera è ferma. Si muovono solo le increspature del mare e i rami in primo piano, piano, con il vento. Il mare scorre usando le increspature della foto stessa e non ripete mai lo stesso ciclo, quindi non pulsa. I rami oscillano interi. Le luci della notte sono disegnate una volta e restano ferme. La scena usa i pixel della foto, mai più di quelli dello schermo, e gira a 30 fotogrammi al secondo sul telefono e a 60 altrove. Se il dispositivo fatica, scende da sola. Con "riduci movimento" attivo nel sistema, la scena sta ferma.
+La camera è ferma e la costa resta la foto. Il mare è ricostruito: il colore è quello della foto senza increspature (`seabed.webp`), e sopra c'è una superficie simulata a ogni fotogramma. Due piccole texture d'onde sommano ciascuna 24 onde con la loro velocità fisica, quindi il disegno non si ripete mai; più un'onda lunga di risacca. La superficie riflette il cielo dell'ora, il sole e la luna (la scia si forma da sola), sposta il fondale dove l'acqua è bassa e ci posa le reti di luce. La prospettiva viene da una camera ricavata dalla foto (`tools/sea.py`): circa 29 m sopra l'acqua. Il vento regola quanto il mare è mosso, "Movimento" quanto in fretta va. I rami oscillano interi. La scena usa i pixel della foto, mai più di quelli dello schermo, e gira a 30 fotogrammi al secondo sul telefono e a 60 altrove. Con "riduci movimento" attivo nel sistema, la scena sta ferma.
 
 ## Rifare le mappe della foto
 
 ```bash
 pip install numpy opencv-python-headless
-python3 tools/maps.py      # legge source/caletta.jpg, scrive img/ e i controlli in tools/out/
+python3 tools/sea.py       # rifà anche le mappe di tools/maps.py; legge source/caletta.jpg, scrive img/ e i controlli in tools/out/
 ```
 
 ## Il file unico

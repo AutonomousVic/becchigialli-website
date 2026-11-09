@@ -8,11 +8,12 @@ the surface needs. It runs tools/maps.py first and builds on its masks.
 Outputs (img/):
   seabed.webp   the sea without ripples, sparkles or objects; extended smoothly over the land so
                 a refracted lookup near the shore never picks up a rock
-  sea.png       RGBA data map, full resolution:
+  sea.png       RGB data map, full resolution:
                   R  water coverage (1 water, soft one-pixel edge; water goes on under the leaves)
                   G  depth, 0 at the waterline .. 1 open sea
                   B  signed distance to the shore, 128 + 2*px (water side positive), -64..+63 px
-                  A  how exposed that stretch of shore is to the swell, 0..1
+  maps.png      (written by maps.py) its B channel becomes how exposed each stretch of shore is
+                to the swell, 0..1
   objects.webp  the swimmer, the boat, the buoy and the boom, cut out (RGBA), to float on the water
 Review images go to tools/out/sea-*.jpg. The camera found from the photo is printed: it goes into
 SCENE.camera in scene.html.
@@ -197,14 +198,13 @@ def main():
     exp_ = np.clip(exp_, 0, 1) * (np.abs(sd) < 24)
     exp_ = cv2.GaussianBlur(exp_.astype(np.float32), (0, 0), 2)
 
-    sea = np.dstack([
-        np.clip(exp_, 0, 1) * 255,                         # A (written as BGRA: index 3)
-        np.clip(128 + 2 * sd, 0, 255),                     # B
-        np.clip(depth, 0, 1) * 255,                        # G
-        np.clip(cover, 0, 1) * 255,                        # R
-    ])
-    bgra = np.dstack([sea[..., 1], sea[..., 2], sea[..., 3], sea[..., 0]])
-    cv2.imwrite(os.path.join(OUT, 'sea.png'), np.round(bgra).astype(np.uint8), [cv2.IMWRITE_PNG_COMPRESSION, 9])
+    # RGB only: a browser may premultiply a PNG's alpha and lose the colour where alpha is 0
+    bgr = np.dstack([np.clip(128 + 2 * sd, 0, 255), np.clip(depth, 0, 1) * 255, np.clip(cover, 0, 1) * 255])
+    cv2.imwrite(os.path.join(OUT, 'sea.png'), np.round(bgr).astype(np.uint8), [cv2.IMWRITE_PNG_COMPRESSION, 9])
+    # the exposure is smooth: it takes the drift's place in maps.png (half resolution, B)
+    mp = cv2.imread(os.path.join(OUT, 'maps.png'))
+    mp[..., 0] = np.clip(cv2.resize(exp_.astype(np.float32), (mp.shape[1], mp.shape[0]), interpolation=cv2.INTER_AREA) * 255 + 0.5, 0, 255).astype(np.uint8)
+    cv2.imwrite(os.path.join(OUT, 'maps.png'), mp, [cv2.IMWRITE_PNG_COMPRESSION, 9])
 
     cam = dict(f=F, cx=CX, cy=CY, horizon=HORIZON, pitch=float(PITCH), height=HEIGHT, swell=[float(k[0]), float(k[1])],
                objects=objs)

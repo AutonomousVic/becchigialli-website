@@ -25,7 +25,7 @@ const must = (cond, msg) => { if (!cond) throw new Error('bundle: ' + msg); };
 let scene = read('scene.html');
 let n = 0;
 scene = scene.replace(/'(img\/[\w.-]+)'/g, (_, f) => { n++; return `'${dataUri(f)}'`; });
-must(n >= 6, `expected at least 6 images in scene.html, found ${n}`);
+must(n >= 9, `expected at least 9 images in scene.html, found ${n}`);
 // it travels inside a <script type="text/plain">: nothing in it may end or re-open a script there
 must(!/<\\(\/?script|!--)/i.test(scene), 'scene.html already contains an escaped script tag');
 const sceneText = scene.replace(/<(\/?script|!--)/gi, '<\\$1');

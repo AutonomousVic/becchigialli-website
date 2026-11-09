@@ -4,7 +4,8 @@ Outputs (img/):
   sky.png      8-bit sky alpha, same size as the photo
   skyfill.png  the photo sky extended under the land and blurred (no halos, no holes)
   maps.png     RGB data map at half resolution (the fields are smooth): R disparity (0 far .. 255 near),
-               G sway weight, B drift (how much of the photo's ripples travel: 1 open water, 0.5 shallow, 0 land)
+               G sway weight, B drift (how much of the photo's ripples travel: 1 open water, 0.5 shallow,
+               0 land); tools/sea.py then puts the shore's exposure to the swell in B
   plate.webp   the photo with the foreground leaves painted out (what is behind a swaying leaf)
   leaf.png     8-bit soft matte of the foreground leaves; leafrgb.webp their colour
   poster.webp  a small copy of the photo the page shows until the scene's first frame
