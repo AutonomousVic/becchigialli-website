@@ -30,6 +30,8 @@
   #poster { position:fixed; inset:0; z-index:0; overflow:hidden; --fp:46% 42%;
             filter:brightness(var(--dim,1)) saturate(var(--sat,1)); }
   @media (orientation: portrait){ #poster { --fp:43% 50%; } }
+  /* wider than the photo: the scene shows all of it, centred, the sides filled in; so does the poster */
+  @media (min-aspect-ratio: 1086/1200){ #poster::after { background-size:contain; background-position:center; } }
   #poster::before, #poster::after { content:''; position:absolute; background-repeat:no-repeat; background-size:cover; background-position:var(--fp); }
   #poster::before { inset:-40px; background-image:var(--lqip); filter:blur(24px); }
   #poster::after { inset:0; background-image:url(img/poster.webp); }

@@ -267,10 +267,36 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float expo, float aspect){
   return max(col, 0.0);
 }
 
+// What goes where the screen is wider than the photo: the photo's own colours, mirrored out
+// from its edge, blurred more the further out, and darkened. Nothing there moves.
+vec3 sideFill(vec2 q){
+  float dx = q.x < 0.0 ? -q.x : max(q.x - 1.0, 0.0);              // photo widths outside the photo
+  float mx = 1.0 - abs(1.0 - mod(q.x, 2.0)), my = clamp(q.y, 0.0, 1.0);
+  float r = 0.05 + 0.06*min(dx, 1.0);                              // blur radius, in photo widths
+  vec3 c = vec3(0.0);
+  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++){
+    vec2 t = vec2(mx + float(i)*r, my + float(j)*r*0.9);
+    t.x = 1.0 - abs(1.0 - mod(t.x, 2.0));                          // stay mirrored past the photo's edge
+    c += textureLod(uPlate, vec2(t.x, clamp(t.y, 0.0, 1.0)), 5.0).rgb;
+  }
+  return grade(c/9.0)*(0.88 - 0.42*min(dx, 1.0))*(1.0 - 0.6*uNight);   // darker still at night, like the sky it borrows from
+}
+void finish(vec3 col, vec2 s){
+  // gentle highlight shoulder: the photo stays itself at noon
+  col = max(col, 0.0);
+  col = mix(col, 1.0 - 0.2*exp(-(col - 0.8)/0.2), step(0.8, col));
+  vec2 v = s - 0.5;
+  col *= 1.0 - uNight*0.35*dot(v, v);
+  vec3 o = toSRGB(clamp(col, 0.0, 1.0));
+  o += (fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5)/255.0;
+  oC = vec4(o, 1.0);
+}
+
 void main(){
   // the camera does not move: a screen pixel is a photo pixel, nothing else
   vec2 s = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y)/uRes;
   vec2 q = uOff + s*uVis;
+  if (q.x < 0.0 || q.x > 1.0){ finish(sideFill(q), s); return; }
   float aspect = uImg.x/uImg.y;
   vec4 m = texture(uMaps, q);
   vec2 ip = q*uImg;
@@ -363,14 +389,11 @@ void main(){
   // ---- lights at night: windows, lamps, the far coast, from the light map drawn in JS
   if (uLightsK > 0.001) col += texture(uLights, q).rgb*${LIGHT_SCALE.toFixed(2)}*uLightsK;
 
-  // gentle highlight shoulder: the photo stays itself at noon
-  col = max(col, 0.0);
-  col = mix(col, 1.0 - 0.2*exp(-(col - 0.8)/0.2), step(0.8, col));
-  vec2 v = s - 0.5;
-  col *= 1.0 - uNight*0.35*dot(v, v);
-  vec3 o = toSRGB(clamp(col, 0.0, 1.0));
-  o += (fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5)/255.0;
-  oC = vec4(o, 1.0);
+  // into the side fill over the photo's last 70 px, on the sides that have one
+  float fe = 70.0/uImg.x;
+  float ef = (uOff.x < -1e-4 ? smoothstep(0.0, fe, q.x) : 1.0)*(uOff.x + uVis.x > 1.0001 ? smoothstep(0.0, fe, 1.0 - q.x) : 1.0);
+  if (ef < 1.0) col = mix(sideFill(q), max(col, 0.0), ef);
+  finish(col, s);
 }`;
 
 function shader(type, src){
@@ -500,7 +523,7 @@ layout(location = 3) in vec2 aD;          // where the leaf hangs at rest (photo
 uniform highp sampler2D uNodes;           // per node: pivot now (x, y), turn
 uniform vec2 uImg, uOff, uVis;
 uniform float uT, uWk, uGust;
-out vec2 vUV, vRest, vRestDir; out vec3 vCol; out float vSoft, vKind, vFlip, vLen, vWid;
+out vec2 vUV, vRest, vRestDir, vP; out vec3 vCol; out float vSoft, vKind, vFlip, vLen, vWid;
 vec3 node(float i){ int k = int(i + 0.5); return texelFetch(uNodes, ivec2(k % 256, k / 256), 0).xyz; }
 void main(){
   int v = gl_VertexID; vec2 c = vec2((v == 1 || v == 2 || v == 4) ? 0.5 : -0.5, (v == 2 || v == 4 || v == 5) ? 0.5 : -0.5);
@@ -532,15 +555,16 @@ void main(){
   vec2 sc = (p/uImg - uOff)/uVis;
   gl_Position = vec4(sc.x*2.0 - 1.0, 1.0 - sc.y*2.0, 0.0, 1.0);
   if (aB.z > 1.5){ vRest = centre; vRestDir = dir; }
+  vP = p;
   vUV = vec2(c.x*2.0*hs.x, c.y*2.0*hs.y); vCol = aC.rgb; vSoft = soft; vKind = aB.z; vFlip = flip; vLen = len; vWid = wid;
 }`;
 const LFS = `#version 300 es
 precision highp float;
 uniform float uEV, uSat, uCon, uNight;
 uniform vec3 uWB, uLift;
-uniform vec2 uRes, uImg;
+uniform vec2 uRes, uImg, uOff, uVis;
 uniform sampler2D uLeafRGB;
-in vec2 vUV, vRest, vRestDir; in vec3 vCol; in float vSoft, vKind, vFlip, vLen, vWid;
+in vec2 vUV, vRest, vRestDir, vP; in vec3 vCol; in float vSoft, vKind, vFlip, vLen, vWid;
 out vec4 o;
 ${GRADE_GLSL}
 vec3 lin(vec3 c){ return mix(c/12.92, pow((c + 0.055)/1.055, vec3(2.4)), step(vec3(0.04045), c)); }
@@ -565,6 +589,8 @@ void main(){
     c = mix(c, vec3(dot(c, LUM))*1.35 + c*0.15, 0.4*smoothstep(-0.3, -1.0, vFlip));
   }
   float a = smoothstep(vSoft, -vSoft, d);
+  // like the photo, into the side fill at its edges
+  a *= (uOff.x < -1e-4 ? smoothstep(0.0, 70.0, vP.x) : 1.0)*(uOff.x + uVis.x > 1.0001 ? smoothstep(0.0, 70.0, uImg.x - vP.x) : 1.0);
   if (a < 0.003) discard;
   vec3 col = grade(c);
   col = mix(col, 1.0 - 0.2*exp(-(col - 0.8)/0.2), step(0.8, col));
@@ -859,8 +885,11 @@ function layout(){
   if (view && view.key === key) return view;
   viewW = w; viewH = h;
   const A = w/h, a = SCENE.w/SCENE.h;
-  const vis = A > a ? [1, a/A] : [A/a, 1];
-  const f = A >= 1 ? SCENE.focal.landscape : SCENE.focal.portrait;
+  // the photo always at its full height: a narrower screen crops its sides, a wider one has room left
+  // at the sides, filled in the shader
+  const vis = [A/a, 1];
+  const f = (A >= 1 ? SCENE.focal.landscape : SCENE.focal.portrait).slice();
+  if (A > a) f[0] = 0.5;                // wider than the photo: all of it, centred, the sides filled in the shader
   const density = vis[1]*SCENE.h/h;     // photo pixels per CSS pixel
   let W, H, uv, off;
   if (density <= DPR && quality === 1){
