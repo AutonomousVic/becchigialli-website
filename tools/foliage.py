@@ -15,7 +15,7 @@ backlight) stays where the photo has it.
             the bushes along the bottom, softer where the photo is out of focus there.
   twigs     on the branch on the right, the segments of the skeleton, thin and dark.
 
-Output: img/rig.json. Review image: tools/out/foliage.jpg (the leaves drawn still, over the plate).
+Output: img/rig.json and img/leaftex.webp (the photo's leaves, carried over the bushes' soft rim). Review image: tools/out/foliage.jpg (the leaves drawn still, over the plate).
 """
 import os, json, base64
 from collections import deque
@@ -140,6 +140,14 @@ def main():
     # the bushes along the bottom do not take the photo's colours (out of focus, half sea): a
     # palette of their own greens, lighter on the outside of the bush where the sun reaches,
     # darker deep inside
+    # the bushes, as the branch: each leaf carries the photo's leaves where it sits. Around the bushes
+    # the photo is out of focus and half sea: there the texture holds the plant's colour, carried out
+    # from the plant, so a leaf at the rim never shows the water
+    T = F.copy()
+    bush = ~branch
+    T = np.where((bush & ~mask)[..., None], maps.pull_push(F, mask), T)
+    cv2.imwrite(os.path.join(OUT, 'leaftex.webp'), np.clip(T, 0, 255).astype(np.uint8), [cv2.IMWRITE_WEBP_QUALITY, 85])
+    F = T
     inside = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5)
     def bush_colour(x, y, layer):
         depth = np.clip(inside[int(y), int(x)] / 28.0, 0, 1)
@@ -171,13 +179,10 @@ def main():
                 r = max(1, int(L * 0.35))
                 y0, y1, x0, x1 = max(0, yi - r), min(h, yi + r + 1), max(0, xi - r), min(w, xi + r + 1)
                 sub = mask[y0:y1, x0:x1]
-                if oak:
-                    col = F[y0:y1, x0:x1][sub].mean(0) if sub.any() else F[yi, xi]
-                    col = col * (0.94 + 0.12 * rng.random()) * (0.92 if layer == 0 else 1.0)   # the lower layer a touch darker
-                else:
-                    col = bush_colour(x, y, layer)
+                col = F[y0:y1, x0:x1][sub].mean(0) if sub.any() else F[yi, xi]
+                col = col * (0.94 + 0.12 * rng.random()) * (0.92 if layer == 0 else 1.0)   # the lower layer a touch darker
                 s_loc = sharp[yi, xi]
-                soft = float(np.clip(2.0 - s_loc / 50.0, 0.6, 1.7)) if oak else float(np.clip(1.6 - s_loc / 60.0, 0.6, 1.1))
+                soft = float(np.clip(2.0 - s_loc / 50.0, 0.6, 1.7))
                 leaves.append((nd_i, x - nd['px'], y - nd['py'], L, ang, col[2], col[1], col[0], soft,
                                1 if oak else 0, rng.random()))
     print('leaves', len(leaves))
