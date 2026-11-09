@@ -3,10 +3,11 @@
 Outputs (img/):
   sky.png      8-bit sky alpha, same size as the photo
   skyfill.png  the photo sky extended under the land and blurred (no halos, no holes)
-  maps.png     RGB data map: R disparity (0 far .. 255 near), G sway weight,
-               B drift (how much of the photo's ripples travel: 1 open water, 0.5 shallow, 0 land)
-  plate.jpg    the photo with the foreground leaves painted out (what is behind a swaying leaf)
-  leaf.png     8-bit soft matte of the foreground leaves; leafrgb.jpg their colour
+  maps.png     RGB data map at half resolution (the fields are smooth): R disparity (0 far .. 255 near),
+               G sway weight, B drift (how much of the photo's ripples travel: 1 open water, 0.5 shallow, 0 land)
+  plate.webp   the photo with the foreground leaves painted out (what is behind a swaying leaf)
+  leaf.png     8-bit soft matte of the foreground leaves; leafrgb.webp their colour
+  poster.webp  a small copy of the photo the page shows until the scene's first frame
 Review overlays go to tools/out/.
 
 The thresholds are tuned by eye for this photo; rerun after changing the image.
@@ -235,19 +236,22 @@ def main():
         sel = under & (np.round(across) == k)
         behind[sel] = c
     plate = np.clip(np.where(hole[..., None], behind, img), 0, 255)
-    cv2.imwrite(os.path.join(OUT, 'plate.jpg'), plate.astype(np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 92])
+    cv2.imwrite(os.path.join(OUT, 'plate.webp'), plate.astype(np.uint8), [cv2.IMWRITE_WEBP_QUALITY, 85])
     # The leaves' own colour, without the sea mixed into their edge pixels (photo = leaf*a + plate*(1-a)),
     # so the picture at rest is the photo and a swinging leaf carries no sea with it.
-    plate_q = cv2.imread(os.path.join(OUT, 'plate.jpg')).astype(np.float32)
+    plate_q = cv2.imread(os.path.join(OUT, 'plate.webp')).astype(np.float32)
     a = leaf[..., None]
     F = np.where(hole[..., None], np.clip((img - (1 - a) * plate_q) / np.maximum(a, 0.12), 0, 255), img)
     # outside the leaves the colour is never seen: keep it smooth so the file stays small
     F = np.where((leaf > 0.002)[..., None], F, cv2.GaussianBlur(pull_push(F, leaf > 0.002), (0, 0), 4))
-    cv2.imwrite(os.path.join(OUT, 'leafrgb.jpg'), F.astype(np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 93])
+    cv2.imwrite(os.path.join(OUT, 'leafrgb.webp'), F.astype(np.uint8), [cv2.IMWRITE_WEBP_QUALITY, 85])
     cv2.imwrite(os.path.join(OUT, 'leaf.png'), np.clip(leaf * 255 + 0.5, 0, 255).astype(np.uint8))
 
     maps = np.dstack([drift, sway, d])  # BGR order for OpenCV: B drift, G sway, R disparity
-    cv2.imwrite(os.path.join(OUT, 'maps.png'), np.clip(maps * 255 + 0.5, 0, 255).astype(np.uint8))
+    half = cv2.resize(maps.astype(np.float32), (w // 2, h // 2), interpolation=cv2.INTER_AREA)
+    cv2.imwrite(os.path.join(OUT, 'maps.png'), np.clip(half * 255 + 0.5, 0, 255).astype(np.uint8), [cv2.IMWRITE_PNG_COMPRESSION, 9])
+    poster = cv2.resize(im, (400, round(400 * h / w)), interpolation=cv2.INTER_AREA)
+    cv2.imwrite(os.path.join(OUT, 'poster.webp'), poster, [cv2.IMWRITE_WEBP_QUALITY, 62])
     cv2.imwrite(os.path.join(OUT, 'sky.png'), np.clip(sky_a * 255 + 0.5, 0, 255).astype(np.uint8))
 
     # ---- sky fill: pull-push from confident sky pixels, then blurred

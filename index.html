@@ -9,6 +9,7 @@
 <meta name="bg-auth" content="v1;salt=OWHlxZPNXIQqAR9P;sha256=6a33ace3a3ab5ee58400cadeb01080b0cedfc9b641c1bab7a7b564e7ba97e45b">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23141D2E'/%3E%3Ctext x='32' y='45' font-family='Georgia,serif' font-size='38' text-anchor='middle' fill='%23FFBF00'%3EB%3C/text%3E%3C/svg%3E">
 <link rel="preload" href="fonts/cormorant-garamond-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="img/poster.webp" as="image" type="image/webp">
 <style>
   @font-face { font-family:'Cormorant Garamond'; font-weight:300; font-display:block; src:url(fonts/cormorant-garamond-latin-300-normal.woff2) format('woff2'); }
   @font-face { font-family:'Cormorant Garamond'; font-weight:400; font-display:block; src:url(fonts/cormorant-garamond-latin-400-normal.woff2) format('woff2'); }
@@ -20,14 +21,20 @@
 
   :root { --yellow:#FFBF00; --ink:#eef2f8; --edge:#0b1a24; color-scheme:dark; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  html,body { height:100%; overflow:hidden; background:var(--edge); }
+  html,body { height:100%; overflow:hidden; background:var(--edge); overscroll-behavior:none; }
   html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   body { font-family:'Inter Tight',system-ui,-apple-system,'Segoe UI',sans-serif; -webkit-font-smoothing:antialiased; color:#fff; }
 
-  /* until the scene's first frame: the photo, blurred and dimmed for the hour */
-  #poster { position:fixed; inset:-40px; z-index:0; background:var(--lqip) 46% 42%/cover no-repeat; filter:blur(24px) brightness(var(--dim,1)); }
+  /* until the scene's first frame: a light copy of the photo, toned for the hour and framed exactly
+     as the scene frames it, over a tiny blurred placeholder that is there from the very first paint */
+  #poster { position:fixed; inset:0; z-index:0; overflow:hidden; --fp:46% 42%;
+            filter:brightness(var(--dim,1)) saturate(var(--sat,1)); }
+  @media (orientation: portrait){ #poster { --fp:43% 50%; } }
+  #poster::before, #poster::after { content:''; position:absolute; background-repeat:no-repeat; background-size:cover; background-position:var(--fp); }
+  #poster::before { inset:-40px; background-image:var(--lqip); filter:blur(24px); }
+  #poster::after { inset:0; background-image:url(img/poster.webp); }
   #scene-frame { position:fixed; inset:0; z-index:0; width:100%; height:100%; border:0; display:block;
-                 pointer-events:none; opacity:0; transition:opacity .9s; background:transparent; }
+                 pointer-events:none; opacity:0; transition:opacity 1.2s ease; background:transparent; }
   /* a veil at the bottom keeps the time readable over the bright sea; one at the top for the menu */
   body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; opacity:0; transition:opacity .6s;
                  background:radial-gradient(ellipse 72% 82% at 0 0, rgba(4,14,22,.78), rgba(4,14,22,.52) 34%, rgba(4,14,22,.2) 60%, transparent 82%); }
@@ -169,6 +176,7 @@
     var day = Math.max(0, Math.min(1, Math.min(h - 5.5, 21 - h)/2));
     var r = document.documentElement.style;
     r.setProperty('--dim', (0.22 + 0.78*day).toFixed(2));
+    r.setProperty('--sat', (0.55 + 0.45*day).toFixed(2));
     r.setProperty('--lqip', "url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCAAeABsDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDmlkaKN/IeOSCJSzADaUxyeK29D8UytEVlgNxHHjJX76jpn/8AXWTPfw6XthuHdty7W2g9uM+hHHPrTdF0m4WGK9gHnW8imQszbAhxjGeeM5rFTcVdFOlGXU9W037Pe2sdzA2Y3HGRgg+hHY1pCBQO1eP2Uk0usafJLKYWkyZUBGQQAOffvyPWuil8RRiVhA0DRg8Ft+f0FdUZ3jeWhxVPclaKucnqFu91PJu8pVdtxzEMjpx9OBTEeSC2WzS6zGONqjge2OlbFxp6NIsjucbSCAKqtaJDIvO5OO3NcuHq0ppI4q7xMZNuWhTSA2ES3ECmSYHCEjoatvp9zdt57pEjuAWH2fPOOf1qZt0B2MQSP6VOszFQen416sIQqapnnyxVWlo0f//Z)");
   })();
 </script>
@@ -187,7 +195,7 @@
 </div>
 
 <main id="lock">
-  <form class="glass" id="login" autocomplete="on">
+  <form class="glass" id="login" method="dialog" autocomplete="on">
     <div class="logo" aria-hidden="true">BECCHIGIALLI</div>
     <div class="rule"></div>
     <h1 class="sub" id="lock-sub">Accesso riservato</h1>
@@ -343,7 +351,7 @@ const frame = $('scene-frame');
 {
   const pass = new URLSearchParams();
   for (const k of ['hour', 't', 'still']) if (params.has(k)) pass.set(k, params.get(k));
-  if ([...pass].length) frame.src = 'scene.html?' + pass;
+  if ([...pass].length && frame.hasAttribute('src')) frame.src = 'scene.html?' + pass;
 }
 let sceneReady = false;
 // the scene lives in a frame that knows nothing of the notch: hand it the page's safe areas
@@ -362,7 +370,23 @@ function syncScene(){
   const w = where.weather;
   sceneMessage({ type: 'site:time', hour: visitorHour(), weather: w ? { cloud: w.cloud_cover/100, wind: w.wind_speed_10m } : null });
 }
-frame.addEventListener('load', () => { syncScene(); setTimeout(() => { if (!sceneReady) frame.style.display = 'none'; }, 30000); });
+let sceneTimer = 0;
+frame.addEventListener('load', () => {
+  if (!frame.hasAttribute('src') && !frame.hasAttribute('srcdoc')) return;   // the frame's first, empty page
+  syncScene();
+  clearTimeout(sceneTimer);
+  sceneTimer = setTimeout(() => { if (!sceneReady) frame.style.display = 'none'; }, 30000);
+});
+// the single-file build carries the scene's source at the very end of the page (this script runs
+// before it has arrived): it goes into the frame once the page has been drawn, so the panel never waits
+function insertScene(){
+  const src = document.getElementById('scene-src');
+  if (src) requestAnimationFrame(() => setTimeout(() => {
+    frame.srcdoc = src.textContent.replace(/<\\(\/?script|!--)/gi, '<$1');
+    src.remove();
+  }, 0));
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', insertScene); else insertScene();
 setInterval(syncScene, 30000);
 window.addEventListener('message', e => {
   if (e.source !== frame.contentWindow) return;

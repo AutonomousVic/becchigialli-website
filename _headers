@@ -1,0 +1,6 @@
+# Cloudflare Pages: how long browsers keep each file. Pages serves everything else (the pages,
+# astro.js, content.json) revalidated on every visit, so a new deploy shows up at once.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+/img/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
