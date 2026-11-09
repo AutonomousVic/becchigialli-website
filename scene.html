@@ -105,11 +105,11 @@ void main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position
 const LIGHT_SCALE = 1.6;   // the light map stores light/1.6, sRGB-encoded, so faint halos keep their precision
 const FS = `#version 300 es
 precision highp float;
-uniform sampler2D uPlate, uMaps, uSky, uFill, uLeafA, uLeafRGB, uLights, uWaveA, uWaveB, uSeabed, uSea, uObjects;
+uniform sampler2D uPlate, uMaps, uSky, uFill, uLights, uWaveA, uWaveB, uSeabed, uSea, uObjects;
 uniform vec2 uRes, uImg, uOff, uVis;
 uniform float uTime, uHorizonY;
 // motion, already scaled by the wind and by "Movimento"
-uniform float uSwing, uSwingW, uFlutter, uFlutterW, uStarTw;
+uniform float uStarTw;
 uniform float uEV, uSat, uCon, uSkyMix, uNight, uStars, uCloud, uSunVis, uMoonVis, uLightsK, uGlint;
 // the sea: the camera found from the photo, the waves, the lights it mirrors
 uniform vec4 uCam;                  // focal length, principal point x and y (photo px), pitch (rad)
@@ -272,29 +272,9 @@ void main(){
   vec4 m = texture(uMaps, q);
   vec2 ip = q*uImg;
 
-  // ---- the leaves in front. Each branch swings as one piece: the phase barely changes along it,
-  // and the amplitude map keeps it still where it enters the picture, freer towards the tips.
-  // Gusts come and go slowly. Leaves catching the light flicker in brightness, not in shape.
-  vec2 disp = vec2(0.0);
-  float sw = m.g;
-  if (sw > 0.004 && uSwing > 0.0){
-    float t = uTime;
-    float gust = 0.62 + 0.38*sin(t*0.23 + 1.7)*sin(t*0.37 + 0.4);
-    float ph = t*uSwingW + q.y*0.9 + q.x*0.5;
-    float swing = sin(ph) + 0.25*sin(2.1*ph + 1.3);
-    disp = vec2(swing, 0.22*swing*swing - 0.08*swing)*gust*uSwing*sw;
-  }
-  vec2 qL = q - disp/uImg;
-  float leafA = texture(uLeafA, qL).r;
-  vec3 leaf = texture(uLeafRGB, qL).rgb;
-  if (leafA > 0.002 && uFlutter > 0.0){
-    float fl = vnoise(qL*uImg*0.07 + vec2(uTime*uFlutterW, -uTime*uFlutterW*0.8));
-    leaf *= 1.0 + uFlutter*(fl - 0.5)*0.12;
-  }
-
   vec3 c = texture(uPlate, q).rgb;
 
-  float alpha = texture(uSky, q).r*(1.0 - leafA);
+  float alpha = texture(uSky, q).r;
   vec3 land = c;
   if (alpha > 0.002){
     vec3 fill = texture(uFill, q).rgb;
@@ -311,7 +291,7 @@ void main(){
   }
   vec3 col = grade(land);
 
-  // ---- the sea, then what floats on it (rising and falling with the swell), then the leaves in front
+  // ---- the sea, then what floats on it (rising and falling with the swell); the leaves come after, drawn on top
   if (sea.r > 0.004){
     col = mix(col, water(q, ip, sea, m.b, aspect), sea.r);
     vec2 qo = q;
@@ -332,7 +312,6 @@ void main(){
     vec4 ob = texture(uObjects, qo);
     col = mix(col, grade(ob.rgb), ob.a);
   }
-  col = mix(col, grade(leaf), leafA);
 
   // ---- sky, only where there is sky: the photo's own by day, a drawn one with sun, moon and stars
   // at dusk and at night
@@ -402,7 +381,8 @@ gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
 gl.linkProgram(prog);
 if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) fail('link: ' + gl.getProgramInfoLog(prog));
 gl.useProgram(prog);
-gl.bindVertexArray(gl.createVertexArray());
+const mainVAO = gl.createVertexArray();
+gl.bindVertexArray(mainVAO);
 const U = {};
 for (let i = 0, n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS); i < n; i++){
   const name = gl.getActiveUniform(prog, i).name.replace(/\[0\]$/, '');
@@ -501,6 +481,151 @@ function drawWaves(t){
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.useProgram(prog);
 }
+/* ---------- the leaves in front, drawn from scratch ----------
+   tools/foliage.py lays them out on a skeleton that follows the photo's branches (img/rig.json):
+   each node turns about its pivot and carries everything beyond it, so a branch bends at its
+   joints and its tips move most; big limbs answer the wind slowly, twigs quickly. Every leaf is
+   a little shape of its own (oak on the right, plain on the bushes below), with the photo's colour
+   where it sits; it flutters on its stalk and, as it turns, its paler underside catches the light. */
+const GRADE_GLSL = FS.slice(FS.indexOf('vec3 toSRGB'), FS.indexOf('vec3 drawnSky'));
+const LVS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec4 aA;          // node, dx, dy (photo px from the node's pivot), length (twig: width)
+layout(location = 1) in vec4 aB;          // angle, softness px, kind (0 plain, 1 oak, 2 twig), seed
+layout(location = 2) in vec4 aC;          // colour (sRGB 0..1), the twig's other node
+uniform highp sampler2D uNodes;           // per node: pivot now (x, y), turn
+uniform vec2 uImg, uOff, uVis;
+uniform float uT, uWk, uGust;
+out vec2 vUV; out vec3 vCol; out float vSoft, vKind, vFlip, vLen, vWid;
+vec3 node(float i){ int k = int(i + 0.5); return texelFetch(uNodes, ivec2(k % 256, k / 256), 0).xyz; }
+void main(){
+  int v = gl_VertexID; vec2 c = vec2((v == 1 || v == 2 || v == 4) ? 0.5 : -0.5, (v == 2 || v == 4 || v == 5) ? 0.5 : -0.5);
+  vec3 n = node(aA.x);
+  float soft = max(aB.y, 0.55);
+  vec2 centre, dir; float len, wid, flip = 0.0;
+  if (aB.z > 1.5){                        // a twig, from its node's pivot to its parent's
+    vec2 a = n.xy, b = node(aC.w).xy;
+    centre = 0.5*(a + b); len = length(b - a); dir = (b - a)/max(len, 1e-3); wid = aA.w;
+  } else {
+    float s = aB.w;
+    vec2 off = aA.yz; float cr = cos(n.z), sr = sin(n.z);
+    vec2 base = n.xy + vec2(cr*off.x - sr*off.y, sr*off.x + cr*off.y);
+    float gust = 0.35 + 0.65*uGust;
+    float flutter = uWk*0.16*gust*sin(uT*(8.0 + 7.0*s) + s*40.0) + uWk*0.05*sin(uT*(2.1 + s) + s*9.0);
+    flip = sin(uT*(4.5 + 4.0*s) + s*17.0)*min(1.0, uWk)*gust;
+    float ang = aB.x + n.z + flutter;
+    dir = vec2(cos(ang), sin(ang));
+    len = aA.w;
+    wid = len*(aB.z > 0.5 ? 0.62 : 0.42)*(0.7 + 0.3*cos(flip*1.1));   // turning on its axis, it narrows
+    centre = base + dir*len*0.5*0.9;      // the leaf grows out from where it hangs
+  }
+  vec2 hs = vec2(len*0.5 + soft*1.5, wid*0.5 + soft*1.5);
+  vec2 perp = vec2(-dir.y, dir.x);
+  vec2 p = centre + dir*(c.x*2.0*hs.x) + perp*(c.y*2.0*hs.y);
+  vec2 sc = (p/uImg - uOff)/uVis;
+  gl_Position = vec4(sc.x*2.0 - 1.0, 1.0 - sc.y*2.0, 0.0, 1.0);
+  vUV = vec2(c.x*2.0*hs.x, c.y*2.0*hs.y); vCol = aC.rgb; vSoft = soft; vKind = aB.z; vFlip = flip; vLen = len; vWid = wid;
+}`;
+const LFS = `#version 300 es
+precision highp float;
+uniform float uEV, uSat, uCon, uNight;
+uniform vec3 uWB, uLift;
+uniform vec2 uRes;
+in vec2 vUV; in vec3 vCol; in float vSoft, vKind, vFlip, vLen, vWid;
+out vec4 o;
+${GRADE_GLSL}
+vec3 lin(vec3 c){ return mix(c/12.92, pow((c + 0.055)/1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+void main(){
+  float d; vec3 c = lin(vCol);
+  if (vKind > 1.5){
+    vec2 p = vUV; p.x = max(abs(p.x) - 0.5*vLen, 0.0);
+    d = length(p) - 0.5*vWid;
+  } else {
+    float u = clamp(vUV.x/vLen + 0.5, 0.0, 1.0);
+    float hw = 0.5*vWid*pow(sin(3.14159*u), 0.7);
+    if (vKind > 0.5) hw *= 1.0 + 0.2*sin(u*21.99 + 0.5);          // the lobes of an oak leaf
+    d = max(abs(vUV.y) - hw, abs(vUV.x) - 0.5*vLen);
+    // its midrib, the light on it as it turns, and the paler underside when it flips over
+    c *= 1.0 - 0.12*exp(-pow(vUV.y/(0.09*vWid), 2.0))*step(abs(vUV.x), 0.45*vLen);
+    c *= 1.0 + 0.16*vFlip;
+    c = mix(c, vec3(dot(c, LUM))*1.35 + c*0.15, 0.4*smoothstep(-0.3, -1.0, vFlip));
+  }
+  float a = smoothstep(vSoft, -vSoft, d);
+  if (a < 0.003) discard;
+  vec3 col = grade(c);
+  col = mix(col, 1.0 - 0.2*exp(-(col - 0.8)/0.2), step(0.8, col));
+  vec2 s = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y)/uRes - 0.5;
+  col *= 1.0 - uNight*0.35*dot(s, s);
+  o = vec4(toSRGB(clamp(col, 0.0, 1.0))*a, a);
+}`;
+const lprog = gl.createProgram();
+gl.attachShader(lprog, shader(gl.VERTEX_SHADER, LVS));
+gl.attachShader(lprog, shader(gl.FRAGMENT_SHADER, LFS));
+gl.linkProgram(lprog);
+if (!gl.getProgramParameter(lprog, gl.LINK_STATUS)) fail('link: ' + gl.getProgramInfoLog(lprog));
+const LU = {};
+for (let i = 0, n = gl.getProgramParameter(lprog, gl.ACTIVE_UNIFORMS); i < n; i++){
+  const name = gl.getActiveUniform(lprog, i).name; LU[name] = gl.getUniformLocation(lprog, name);
+}
+const foliage = { count: 0, nodes: null, tex: null, data: null, vao: null };
+function setupFoliage(rig){
+  const N = rig.nodes.length, bytes = Uint8Array.from(atob(rig.leaves), ch => ch.charCodeAt(0));
+  const nl = rig.count, nt = rig.twigs.length, inst = new Float32Array((nl + nt)*12);
+  let k = 0;
+  for (const [a, b, w] of rig.twigs){ inst.set([a, 0, 0, w, 0, 0.5, 2, 0, 0.17, 0.15, 0.13, b], k); k += 12; }
+  const dv = new DataView(bytes.buffer);
+  for (let i = 0; i < nl; i++){
+    const o = i*13, nd = dv.getUint16(o, true), dx = dv.getUint16(o + 2, true)/32 - 512, dy = dv.getUint16(o + 4, true)/32 - 512;
+    const L = bytes[o + 6]/8, ang = bytes[o + 7]/255*2*Math.PI, soft = bytes[o + 11]/50, ks = bytes[o + 12];
+    inst.set([nd, dx, dy, L, ang, soft, ks >= 128 ? 1 : 0, (ks & 127)/127, bytes[o + 8]/255, bytes[o + 9]/255, bytes[o + 10]/255, -1], k); k += 12;
+  }
+  foliage.count = nl + nt;
+  foliage.vao = gl.createVertexArray(); gl.bindVertexArray(foliage.vao);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
+  for (let a = 0; a < 3; a++){
+    gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 4, gl.FLOAT, false, 48, a*16); gl.vertexAttribDivisor(a, 1);
+  }
+  gl.bindVertexArray(null);
+  foliage.nodes = rig.nodes;
+  foliage.rows = Math.ceil(N/256);
+  foliage.data = new Float32Array(256*foliage.rows*4);
+  foliage.tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, foliage.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 256, foliage.rows, 0, gl.RGBA, gl.FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+}
+// the wind in the branches: gusts that come and go and cross the picture, and each node's own
+// sway at its own pace on top; everything a node carries turns with it
+const gustAt = t => Math.min(1, Math.max(0, 0.55 + 0.3*Math.sin(0.21*t + 1.3)*Math.sin(0.13*t + 0.4) + 0.18*Math.sin(0.37*t + 2.1)));
+function drawFoliage(t, wk, V, U0){
+  if (!foliage.count) return;
+  const nd = foliage.nodes, D = foliage.data, ang = new Float32Array(nd.length);
+  for (let i = 0; i < nd.length; i++){
+    const [px, py, p, f, a, ph] = nd[i], g = gustAt(t - (1086 - px)/420);
+    const d = a*wk*(0.65*g + 0.35*(0.4 + 0.6*g)*Math.sin(2*Math.PI*f*t + ph));
+    if (p < 0){ D[i*4] = px; D[i*4 + 1] = py; ang[i] = d; }
+    else {
+      const [qx, qy] = nd[p], c = Math.cos(ang[p]), s = Math.sin(ang[p]), ox = px - qx, oy = py - qy;
+      D[i*4] = D[p*4] + c*ox - s*oy; D[i*4 + 1] = D[p*4 + 1] + s*ox + c*oy; ang[i] = ang[p] + d;
+    }
+    D[i*4 + 2] = ang[i];
+  }
+  gl.useProgram(lprog);
+  gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, foliage.tex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, foliage.rows, gl.RGBA, gl.FLOAT, D);
+  gl.uniform1i(LU.uNodes, 13);
+  gl.uniform2f(LU.uImg, SCENE.w, SCENE.h); gl.uniform2f(LU.uOff, V.off[0], V.off[1]); gl.uniform2f(LU.uVis, V.uv[0], V.uv[1]);
+  gl.uniform2f(LU.uRes, V.W, V.H);
+  gl.uniform1f(LU.uT, t); gl.uniform1f(LU.uWk, wk); gl.uniform1f(LU.uGust, gustAt(t));
+  for (const k of ['uEV', 'uSat', 'uCon', 'uNight']) gl.uniform1f(LU[k], U0[k]);
+  gl.uniform3fv(LU.uWB, U0.uWB); gl.uniform3fv(LU.uLift, U0.uLift);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindVertexArray(foliage.vao);
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, foliage.count);
+  gl.bindVertexArray(mainVAO); gl.disable(gl.BLEND);
+  gl.useProgram(prog);
+}
+
 // the long swell: two waves of 55 and 40 m, a few degrees apart
 const SWELL = [[55, 0.14], [40, -0.12]].map(([lam, turn]) => {
   const k = 2*Math.PI/lam, a = Math.atan2(SCENE.swell[1], SCENE.swell[0]) + turn;
@@ -779,10 +904,6 @@ function frame(now){
   wv.textContent = state.weather.wind.toFixed(1) + ' m/s';
   mv.textContent = Math.round(M*100) + '%';
   if (!state.windPinned) wd.value = state.weather.wind;
-  gl.uniform1f(U.uSwing, (0.4 + 3.4*wk)*M);              // a branch tip's swing, photo pixels: ~2.7 at 3 m/s
-  gl.uniform1f(U.uSwingW, 0.8 + 0.22*wk);                // one swing every 5-8 s
-  gl.uniform1f(U.uFlutter, Math.min(1.6, 0.5 + 0.5*wk)*M);
-  gl.uniform1f(U.uFlutterW, 0.7 + 0.5*wk);
   // the sea: how rough the wind makes it (slope of a sea surface, after Cox and Munk), the swell,
   // the sun and the moon it mirrors
   const wind = Math.max(0, state.weather.wind), slope2 = (0.003 + 0.00512*wind)*SEA_GAIN*SEA_GAIN;
@@ -839,6 +960,9 @@ function frame(now){
   gl.uniform1f(U.uLightsK, lightTex ? lk*(0.35 + 0.65*night) : 0);
 
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // the leaves in front, on their clock (the sea's: "Movimento" sets its pace), moved by the wind
+  drawFoliage(seaT, wk, V, { uEV: L.ev, uSat: L.sat, uCon: L.con, uNight: night, uWB: L.wb,
+                              uLift: [0.004*night, 0.006*night, 0.012*night] });
 }
 // how rough the sea looks for a given wind: 1 is a real sea's (Cox and Munk); tuned on the photo
 const SEA_GAIN = 1.3;
@@ -914,14 +1038,14 @@ window.__scene = {
 };
 
 try {
-  const [maps, sky, fill, plate, leafA, leafRGB, seabed, sea, objects] = await Promise.all([
+  // the rig is a file on the site; the single-file build puts the object itself here instead
+  const rigSrc = 'img/rig.json';
+  const [maps, sky, fill, plate, seabed, sea, objects, rig] = await Promise.all([
     loadImage('img/maps.png'), loadImage('img/sky.png'), loadImage('img/skyfill.png'), loadImage(SCENE.plate),
-    loadImage('img/leaf.png'), loadImage('img/leafrgb.webp'), loadImage('img/seabed.webp'), loadImage('img/sea.png'),
-    loadImage('img/objects.webp')]);
+    loadImage('img/seabed.webp'), loadImage('img/sea.png'), loadImage('img/objects.webp'),
+    typeof rigSrc === 'string' ? fetch(rigSrc).then(r => r.json()) : rigSrc]);
   gl.useProgram(prog);
   texture(4, plate, {srgb: true, mips: true}); gl.uniform1i(U.uPlate, 4);
-  texture(5, leafA, {red: true}); gl.uniform1i(U.uLeafA, 5);
-  texture(6, leafRGB, {srgb: true}); gl.uniform1i(U.uLeafRGB, 6);
   texture(1, maps); gl.uniform1i(U.uMaps, 1);
   texture(2, sky, {red: true}); gl.uniform1i(U.uSky, 2);
   texture(3, fill, {srgb: true}); gl.uniform1i(U.uFill, 3);
@@ -929,6 +1053,8 @@ try {
   texture(11, sea); gl.uniform1i(U.uSea, 11);
   texture(12, objects, {srgb: true}); gl.uniform1i(U.uObjects, 12);
   gl.uniform1i(U.uWaveA, 8); gl.uniform1i(U.uWaveB, 9);
+  setupFoliage(rig);
+  gl.useProgram(prog); gl.bindVertexArray(mainVAO);
   requestAnimationFrame(loop);
 } catch (e){ stop(e && e.message || e); }
 addEventListener('error', e => stop(e.error || e.message));

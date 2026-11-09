@@ -139,6 +139,9 @@ def main():
     leafy = W & ~M['shallow'] & (yy > 700) & ((ph[..., 0] < 76) | (ph[..., 1] < 35))
     leafy |= W & (M['leaf'] > 0.01)
     clean &= ~cv2.dilate(leafy.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+    # under the old leaves the plate holds a fill (greyish where they covered land too): the leaves
+    # are drawn from scratch now and their gaps show this sea, so it comes from the open water around
+    clean &= ~cv2.dilate(M['hole'].astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
     src = np.where(clean[..., None], src, maps.pull_push(src, clean))
     levels = [1.0, 1.8, 2.8, 4.0]
     blurred = [norm_blur(src, W, s)[0] for s in levels]
