@@ -283,6 +283,11 @@ def main():
     cv2.imwrite(os.path.join(DBG, 'sway.jpg'), (sway * 255).astype(np.uint8))
     cv2.imwrite(os.path.join(DBG, 'drift.jpg'), (drift * 255).astype(np.uint8))
 
+    # what tools/sea.py builds on
+    return dict(im=im, plate=plate, water=water, shallow=shallow, deep=deep, fg=fg, leaf=leaf, hole=hole,
+                things=things.astype(bool), boom=boom, boom_wide=boom_wide, across=across, along=along,
+                right_zone=right_zone, sky_a=sky_a, veg=veg)
+
 
 if __name__ == '__main__':
     main()

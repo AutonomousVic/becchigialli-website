@@ -2,3 +2,4 @@
 dist/
 node_modules/
 tools/out/
+__pycache__/
