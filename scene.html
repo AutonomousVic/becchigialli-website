@@ -53,7 +53,10 @@ const SCENE = {
   // the camera found from the photo by tools/sea.py: a level horizon at row 373, a phone's lens,
   // 29 m above the water; and where the long swell travels on the water (x right, y away)
   camera: { f: 1170, cx: 543, cy: 600, pitch: 0.191636, height: 29 },
-  swell: [-0.9536, 0.3011]
+  swell: [-0.9536, 0.3011],
+  // what floats (boxes in photo px, from tools/sea.py): swimmer, boat, buoy; and the boom's two ends
+  objects: [[220, 967, 268, 996], [1016, 437, 1044, 451], [933, 484, 940, 490]],
+  boom: [798, 623, 1066, 683]
 };
 // a photo pixel -> the direction the camera looks along it (x right, y away, z up)
 function camRay(px, py){
@@ -114,6 +117,9 @@ uniform float uCamH, uSeaT, uSpark; // camera height (m), the sea's own clock (s
 uniform vec2 uAmp;                  // rms slope of the two wave textures
 uniform vec4 uSwK; uniform vec2 uSwW; uniform float uSwA;   // the long swell: two waves
 uniform vec3 uSunDir, uSunSpec, uMoonDir, uMoonSpec;
+uniform float uWind;                // m/s
+uniform vec4 uObjBox[3];            // swimmer, boat, buoy: photo px boxes
+uniform vec4 uBoom;                 // the floating boom, from end to end (photo px)
 uniform vec3 uWB, uZenith, uHorizon, uGlow, uSunCol, uLift;
 uniform vec2 uSunPos, uMoonPos, uMoonPhase;
 out vec4 oC;
@@ -170,13 +176,23 @@ float lobe(vec3 N, vec3 V, vec3 L, float r){   // a light's highlight on facets 
   return exp(-(1.0 - c2)/(c2*r*r))/(3.14159*r*r*c2*c2)*0.25/max(dot(N, -V), 0.05);
 }
 const float CAUSTIC = 0.8;
+// the long swell's height (m) at a point of the sea, at a time
+float swellH(vec2 X, float t){
+  return uSwA*(cos(dot(uSwK.xy, X) - uSwW.x*t) + cos(dot(uSwK.zw, X) - uSwW.y*t + 1.7));
+}
+// how far up the rocks the last crests came: 0 calm .. 1 a crest right there; it drains away slowly
+float surge(vec2 X, float lag){
+  float a = clamp(swellH(X, uSeaT)/(2.0*uSwA), 0.0, 1.0);
+  a = max(a, 0.8*clamp(swellH(X, uSeaT - lag)/(2.0*uSwA), 0.0, 1.0));
+  return max(a, 0.6*clamp(swellH(X, uSeaT - 2.0*lag)/(2.0*uSwA), 0.0, 1.0));
+}
 const mat2 ROT = mat2(0.8253, 0.5646, -0.5646, 0.8253);    // the small waves turned 0.6 rad...
 const mat2 ROT2 = mat2(0.6216, -0.7833, 0.7833, 0.6216);   // ...and again, -0.9 rad and smaller: their repeats never line up
 
 // The water: the photo's own colour of the sea without its ripples (seabed: the floor, the shallows,
 // the seagrass, the blue of the open sea), seen through a simulated surface that mirrors the sky and
 // the sun. Where the surface is flat the colour is the seabed's; the waves only add what changes.
-vec3 water(vec2 q, vec2 ip, vec3 sea, float aspect){
+vec3 water(vec2 q, vec2 ip, vec3 sea, float expo, float aspect){
   vec3 P = seaPoint(ip);
   vec2 X = P.xy;
   vec3 V = normalize(vec3(X, -uCamH));
@@ -214,7 +230,9 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float aspect){
   float caus = clamp(1.0/(1.0 + 0.5*lap), 0.7, 2.0);
   bed *= mix(1.0, 0.88*caus, floorK*CAUSTIC);
   vec3 body = grade(bed);
-  vec3 col = body + (F - F0)*(skyR - body);
+  // (softened where it is large, out at the slant, so the long waves do not stripe the sea black)
+  float dF = F - F0; dF /= 1.0 + 4.0*abs(dF);
+  vec3 col = body + dF*(skyR - body);
   // at dusk and at night the sea mirrors a sky that is not the photo's: the difference, on average
   vec2 qf = dirToImg(vec3(V.xy, -V.z)); qf.y = min(qf.y, uHorizonY - 0.003);
   col += fresnel(-V.z)*uSkyMix*(drawnSky(qf, aspect) - grade(texture(uFill, clamp(qf, vec2(0.001), vec2(0.999))).rgb));
@@ -222,6 +240,20 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float aspect){
   col += (uSunSpec*lobe(N, V, uSunDir, rough) + uMoonSpec*lobe(N, V, uMoonDir, rough + 0.02))*F;
   float crest = (B.b + B2.b - 1.0)*4.24 + 0.4*(A.b - 0.5)*6.0;
   col += uSpark*smoothstep(2.7, 3.6, crest)*(1.0 - lostB)*clamp(uAmp.y/0.09, 0.4, 1.6);
+
+  // ---- the swell on the rocks. As a crest reaches a stretch of shore the water climbs it and
+  // leaves a lace of foam that spreads a little way out and drains back; the rocks the swell meets
+  // head on get the most (expo). A thin line of froth always laps at the waterline. With a strong
+  // wind there is more of it, and the steepest crests out at sea break white.
+  float dShore = max((sea.b*255.0 - 128.0)*0.5, 0.0)/pxm;            // metres from the rock
+  float up = surge(X, 1.5);
+  float reach = (0.8 + 0.2*uWind)*(0.25 + 0.75*up)*(0.4 + 0.6*expo);
+  float dens = exp(-dShore/max(reach, 0.05))*(0.3 + 0.7*expo)*pow(up, 1.5)
+             + 0.1*exp(-dShore/0.2)*(0.4 + 0.6*expo);
+  float lace = 0.5*(B.b + B2.b) + 0.5*vnoise(X*2.6 + vec2(0.11, 0.07)*uSeaT) + 0.25*(vnoise(X*7.0 - 0.2*uSeaT) - 0.5);
+  float foam = clamp(dens*3.0, 0.0, 1.0)*smoothstep(0.6 - 0.15*dens, 0.78 - 0.15*dens, lace);
+  foam += smoothstep(2.4, 3.2, (A.b - 0.5)*6.0 + 0.6*(B.b - 0.5)*6.0)*smoothstep(7.0, 14.0, uWind)*(1.0 - lostA)*0.7;
+  col = mix(col, grade(vec3(0.80, 0.84, 0.86)), clamp(foam, 0.0, 1.0)*0.9);
   return max(col, 0.0);
 }
 
@@ -261,13 +293,36 @@ void main(){
     vec3 fill = texture(uFill, q).rgb;
     land = clamp((c - alpha*fill)/max(1.0 - alpha, 0.12), 0.0, 1.0);
   }
+  vec3 sea = texture(uSea, q).rgb;               // water, depth, distance to the shore
+  // the rock just above the waterline: wet, darker and a little glossy, where the swell has climbed;
+  // it dries again slowly
+  float dLand = (sea.b*255.0 - 128.0)*0.5;
+  if (dLand < 0.0 && dLand > -16.0 && m.b > 0.01){
+    vec3 Pw = seaPoint(ip);
+    float wet = m.b*smoothstep((0.3 + 0.08*uWind)*(0.45 + 0.55*surge(Pw.xy, 2.5)), 0.0, -dLand*Pw.z/uCam.x);
+    land *= 1.0 - 0.32*wet;
+  }
   vec3 col = grade(land);
 
-  // ---- the sea, then what floats on it, then the leaves in front
-  vec3 sea = texture(uSea, q).rgb;               // water, depth, distance to the shore
+  // ---- the sea, then what floats on it (rising and falling with the swell), then the leaves in front
   if (sea.r > 0.004){
-    col = mix(col, water(q, ip, sea, aspect), sea.r);
-    vec4 ob = texture(uObjects, q);
+    col = mix(col, water(q, ip, sea, m.b, aspect), sea.r);
+    vec2 qo = q;
+    for (int i = 0; i < 3; i++){
+      vec4 bx = uObjBox[i];
+      if (ip.x > bx.x - 4.0 && ip.x < bx.z + 4.0 && ip.y > bx.y - 16.0 && ip.y < bx.w + 16.0){
+        vec3 Pa = seaPoint(vec2(0.5*(bx.x + bx.z), bx.w));
+        qo.y += swellH(Pa.xy, uSeaT)*0.9*uCam.x/Pa.z/uImg.y;
+      }
+    }
+    vec2 bd = uBoom.zw - uBoom.xy;
+    float bt = clamp((ip.x - uBoom.x)/bd.x, 0.0, 1.0);
+    vec2 bp = uBoom.xy + bd*bt;
+    if (abs(ip.y - bp.y) < 16.0 && ip.x > uBoom.x - 4.0 && ip.x < uBoom.z + 4.0){
+      vec3 Pb = seaPoint(bp);
+      qo.y += swellH(Pb.xy, uSeaT)*0.9*uCam.x/Pb.z/uImg.y;
+    }
+    vec4 ob = texture(uObjects, qo);
     col = mix(col, grade(ob.rgb), ob.a);
   }
   col = mix(col, grade(leaf), leafA);
@@ -727,10 +782,13 @@ function frame(now){
   gl.uniform4f(U.uCam, SCENE.camera.f, SCENE.camera.cx, SCENE.camera.cy, SCENE.camera.pitch);
   gl.uniform1f(U.uCamH, SCENE.camera.height);
   gl.uniform1f(U.uSeaT, seaT);
-  gl.uniform2f(U.uAmp, Math.sqrt(0.25*slope2), Math.sqrt(0.75*slope2));
+  gl.uniform2f(U.uAmp, Math.sqrt(0.15*slope2), Math.sqrt(0.85*slope2));
   gl.uniform4f(U.uSwK, SWELL[0].kx, SWELL[0].ky, SWELL[1].kx, SWELL[1].ky);
   gl.uniform2f(U.uSwW, SWELL[0].w, SWELL[1].w);
   gl.uniform1f(U.uSwA, 0.12 + 0.025*Math.min(wind, 12));
+  gl.uniform1f(U.uWind, wind);
+  gl.uniform4fv(U.uObjBox, SCENE.objects.flat());
+  gl.uniform4fv(U.uBoom, SCENE.boom);
   // the sun goes round: up behind the hill on the left, behind the camera at noon, down over the
   // far coast on the right (where the drawn sun sets)
   let phi = (L.sun.t !== null ? -18 - L.sun.t*318.5 : 0)*Math.PI/180;

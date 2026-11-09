@@ -74,6 +74,8 @@ def main():
     grey = cv2.cvtColor(M['im'], cv2.COLOR_BGR2GRAY).astype(np.float32) / 255
     cover = maps.guided(grey, W.astype(np.float32), 2, 1e-3)
     cover = np.where(cv2.dilate(W.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool), cover, 0)
+    # the guided edge follows the shore only: inside the water (the boom, the swimmer) it is all water
+    cover = np.maximum(cover, cv2.erode(W.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(np.float32))
 
     # ---- the objects that float: cut out of the photo, and taken out of the sea under them
     objs = []
