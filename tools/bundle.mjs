@@ -28,7 +28,7 @@ must(scene.includes("'img/rig.json'"), 'scene.html no longer loads img/rig.json'
 scene = scene.replace("'img/rig.json'", () => JSON.stringify(JSON.parse(read('img/rig.json'))));
 let n = 0;
 scene = scene.replace(/'(img\/[\w.-]+)'/g, (_, f) => { n++; return `'${dataUri(f)}'`; });
-must(n >= 7, `expected at least 7 images in scene.html, found ${n}`);
+must(n >= 8, `expected at least 8 images in scene.html, found ${n}`);
 // it travels inside a <script type="text/plain">: nothing in it may end or re-open a script there
 must(!/<\\(\/?script|!--)/i.test(scene), 'scene.html already contains an escaped script tag');
 const sceneText = scene.replace(/<(\/?script|!--)/gi, '<\\$1');

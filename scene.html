@@ -493,10 +493,11 @@ precision highp float;
 layout(location = 0) in vec4 aA;          // node, dx, dy (photo px from the node's pivot), length (twig: width)
 layout(location = 1) in vec4 aB;          // angle, softness px, kind (0 plain, 1 oak, 2 twig), seed
 layout(location = 2) in vec4 aC;          // colour (sRGB 0..1), the twig's other node
+layout(location = 3) in vec2 aD;          // where the leaf hangs at rest (photo px)
 uniform highp sampler2D uNodes;           // per node: pivot now (x, y), turn
 uniform vec2 uImg, uOff, uVis;
 uniform float uT, uWk, uGust;
-out vec2 vUV; out vec3 vCol; out float vSoft, vKind, vFlip, vLen, vWid;
+out vec2 vUV, vRest, vRestDir; out vec3 vCol; out float vSoft, vKind, vFlip, vLen, vWid;
 vec3 node(float i){ int k = int(i + 0.5); return texelFetch(uNodes, ivec2(k % 256, k / 256), 0).xyz; }
 void main(){
   int v = gl_VertexID; vec2 c = vec2((v == 1 || v == 2 || v == 4) ? 0.5 : -0.5, (v == 2 || v == 4 || v == 5) ? 0.5 : -0.5);
@@ -518,20 +519,25 @@ void main(){
     len = aA.w;
     wid = len*(aB.z > 0.5 ? 0.62 : 0.42)*(0.7 + 0.3*cos(flip*1.1));   // turning on its axis, it narrows
     centre = base + dir*len*0.5*0.9;      // the leaf grows out from where it hangs
+    // where this leaf was in the photo: it carries the photo's own detail with it
+    vRestDir = vec2(cos(aB.x), sin(aB.x));
+    vRest = aD + vRestDir*len*0.45;
   }
   vec2 hs = vec2(len*0.5 + soft*1.5, wid*0.5 + soft*1.5);
   vec2 perp = vec2(-dir.y, dir.x);
   vec2 p = centre + dir*(c.x*2.0*hs.x) + perp*(c.y*2.0*hs.y);
   vec2 sc = (p/uImg - uOff)/uVis;
   gl_Position = vec4(sc.x*2.0 - 1.0, 1.0 - sc.y*2.0, 0.0, 1.0);
+  if (aB.z > 1.5){ vRest = centre; vRestDir = dir; }
   vUV = vec2(c.x*2.0*hs.x, c.y*2.0*hs.y); vCol = aC.rgb; vSoft = soft; vKind = aB.z; vFlip = flip; vLen = len; vWid = wid;
 }`;
 const LFS = `#version 300 es
 precision highp float;
 uniform float uEV, uSat, uCon, uNight;
 uniform vec3 uWB, uLift;
-uniform vec2 uRes;
-in vec2 vUV; in vec3 vCol; in float vSoft, vKind, vFlip, vLen, vWid;
+uniform vec2 uRes, uImg;
+uniform sampler2D uLeafRGB;
+in vec2 vUV, vRest, vRestDir; in vec3 vCol; in float vSoft, vKind, vFlip, vLen, vWid;
 out vec4 o;
 ${GRADE_GLSL}
 vec3 lin(vec3 c){ return mix(c/12.92, pow((c + 0.055)/1.055, vec3(2.4)), step(vec3(0.04045), c)); }
@@ -545,6 +551,12 @@ void main(){
     float hw = 0.5*vWid*pow(sin(3.14159*u), 0.7);
     if (vKind > 0.5) hw *= 1.0 + 0.2*sin(u*21.99 + 0.5);          // the lobes of an oak leaf
     d = max(abs(vUV.y) - hw, abs(vUV.x) - 0.5*vLen);
+    // the photo's leaves at this spot (veins, sheen, shade), mixed with the leaf's own colour
+    vec2 rp = vRest + vRestDir*vUV.x + vec2(-vRestDir.y, vRestDir.x)*vUV.y;
+    vec3 ph = texture(uLeafRGB, rp/uImg).rgb;
+    c = mix(c, ph, 0.7);
+    // light across the blade: one half catches it, the other is a touch darker; darker at the rim
+    c *= 1.0 + 0.10*sign(vUV.y)*(0.5 + 0.5*vFlip) - 0.18*smoothstep(0.55, 1.0, abs(vUV.y)/max(hw, 0.3));
     // its midrib, the light on it as it turns, and the paler underside when it flips over
     c *= 1.0 - 0.12*exp(-pow(vUV.y/(0.09*vWid), 2.0))*step(abs(vUV.x), 0.45*vLen);
     c *= 1.0 + 0.16*vFlip;
@@ -570,20 +582,21 @@ for (let i = 0, n = gl.getProgramParameter(lprog, gl.ACTIVE_UNIFORMS); i < n; i+
 const foliage = { count: 0, nodes: null, tex: null, data: null, vao: null };
 function setupFoliage(rig){
   const N = rig.nodes.length, bytes = Uint8Array.from(atob(rig.leaves), ch => ch.charCodeAt(0));
-  const nl = rig.count, nt = rig.twigs.length, inst = new Float32Array((nl + nt)*12);
+  const nl = rig.count, nt = rig.twigs.length, inst = new Float32Array((nl + nt)*14);
   let k = 0;
-  for (const [a, b, w] of rig.twigs){ inst.set([a, 0, 0, w, 0, 0.5, 2, 0, 0.17, 0.15, 0.13, b], k); k += 12; }
+  for (const [a, b, w] of rig.twigs){ inst.set([a, 0, 0, w, 0, 0.5, 2, 0, 0.17, 0.15, 0.13, b, 0, 0], k); k += 14; }
   const dv = new DataView(bytes.buffer);
   for (let i = 0; i < nl; i++){
     const o = i*13, nd = dv.getUint16(o, true), dx = dv.getUint16(o + 2, true)/32 - 512, dy = dv.getUint16(o + 4, true)/32 - 512;
     const L = bytes[o + 6]/8, ang = bytes[o + 7]/255*2*Math.PI, soft = bytes[o + 11]/50, ks = bytes[o + 12];
-    inst.set([nd, dx, dy, L, ang, soft, ks >= 128 ? 1 : 0, (ks & 127)/127, bytes[o + 8]/255, bytes[o + 9]/255, bytes[o + 10]/255, -1], k); k += 12;
+    const pv = rig.nodes[nd];
+    inst.set([nd, dx, dy, L, ang, soft, ks >= 128 ? 1 : 0, (ks & 127)/127, bytes[o + 8]/255, bytes[o + 9]/255, bytes[o + 10]/255, -1, pv[0] + dx, pv[1] + dy], k); k += 14;
   }
   foliage.count = nl + nt;
   foliage.vao = gl.createVertexArray(); gl.bindVertexArray(foliage.vao);
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
-  for (let a = 0; a < 3; a++){
-    gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 4, gl.FLOAT, false, 48, a*16); gl.vertexAttribDivisor(a, 1);
+  for (let a = 0; a < 4; a++){
+    gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, a < 3 ? 4 : 2, gl.FLOAT, false, 56, a*16); gl.vertexAttribDivisor(a, 1);
   }
   gl.bindVertexArray(null);
   foliage.nodes = rig.nodes;
@@ -616,6 +629,7 @@ function drawFoliage(t, wk, V, U0){
   gl.uniform1i(LU.uNodes, 13);
   gl.uniform2f(LU.uImg, SCENE.w, SCENE.h); gl.uniform2f(LU.uOff, V.off[0], V.off[1]); gl.uniform2f(LU.uVis, V.uv[0], V.uv[1]);
   gl.uniform2f(LU.uRes, V.W, V.H);
+  gl.uniform1i(LU.uLeafRGB, 6);
   gl.uniform1f(LU.uT, t); gl.uniform1f(LU.uWk, wk); gl.uniform1f(LU.uGust, gustAt(t));
   for (const k of ['uEV', 'uSat', 'uCon', 'uNight']) gl.uniform1f(LU[k], U0[k]);
   gl.uniform3fv(LU.uWB, U0.uWB); gl.uniform3fv(LU.uLift, U0.uLift);
@@ -1040,9 +1054,9 @@ window.__scene = {
 try {
   // the rig is a file on the site; the single-file build puts the object itself here instead
   const rigSrc = 'img/rig.json';
-  const [maps, sky, fill, plate, seabed, sea, objects, rig] = await Promise.all([
+  const [maps, sky, fill, plate, seabed, sea, objects, leafRGB, rig] = await Promise.all([
     loadImage('img/maps.png'), loadImage('img/sky.png'), loadImage('img/skyfill.png'), loadImage(SCENE.plate),
-    loadImage('img/seabed.webp'), loadImage('img/sea.png'), loadImage('img/objects.webp'),
+    loadImage('img/seabed.webp'), loadImage('img/sea.png'), loadImage('img/objects.webp'), loadImage('img/leafrgb.webp'),
     typeof rigSrc === 'string' ? fetch(rigSrc).then(r => r.json()) : rigSrc]);
   gl.useProgram(prog);
   texture(4, plate, {srgb: true, mips: true}); gl.uniform1i(U.uPlate, 4);
@@ -1052,6 +1066,7 @@ try {
   texture(10, seabed, {srgb: true}); gl.uniform1i(U.uSeabed, 10);
   texture(11, sea); gl.uniform1i(U.uSea, 11);
   texture(12, objects, {srgb: true}); gl.uniform1i(U.uObjects, 12);
+  texture(6, leafRGB, {srgb: true});          // the photo's leaves: the detail the drawn leaves carry
   gl.uniform1i(U.uWaveA, 8); gl.uniform1i(U.uWaveB, 9);
   setupFoliage(rig);
   gl.useProgram(prog); gl.bindVertexArray(mainVAO);
