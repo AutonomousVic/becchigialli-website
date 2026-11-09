@@ -231,6 +231,9 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float expo, float aspect){
   // never a dark net
   float caus = exp(-lap*lap/0.06);
   bed *= 1.0 + floorK*CAUSTIC*(caus - 0.16);
+  // far out, where the waves are smaller than a pixel, the photo's own detail (it barely moves at
+  // that distance): the far sea stays as sharp as the photo
+  bed += (texture(uPlate, q).rgb - textureLod(uPlate, q, 2.0).rgb)*lostB*smoothstep(0.75, 1.0, depth)*(1.0 - 0.8*uSkyMix);
   vec3 body = grade(bed);
   // (softened where it is large, out at the slant, so the long waves do not stripe the sea black)
   float dF = F - F0; dF /= 1.0 + 4.0*abs(dF);
@@ -553,8 +556,8 @@ void main(){
     d = max(abs(vUV.y) - hw, abs(vUV.x) - 0.5*vLen);
     // the photo's leaves at this spot (veins, sheen, shade), mixed with the leaf's own colour
     vec2 rp = vRest + vRestDir*vUV.x + vec2(-vRestDir.y, vRestDir.x)*vUV.y;
-    vec3 ph = texture(uLeafRGB, rp/uImg).rgb;
-    c = mix(c, ph, 0.7);
+    // only the oak on the right: the bushes below keep their own colours
+    if (vKind > 0.5) c = mix(c, texture(uLeafRGB, rp/uImg).rgb, 0.7);
     // light across the blade: one half catches it, the other is a touch darker; darker at the rim
     c *= 1.0 + 0.10*sign(vUV.y)*(0.5 + 0.5*vFlip) - 0.18*smoothstep(0.55, 1.0, abs(vUV.y)/max(hw, 0.3));
     // its midrib, the light on it as it turns, and the paler underside when it flips over
@@ -562,7 +565,8 @@ void main(){
     c *= 1.0 + 0.16*vFlip;
     c = mix(c, vec3(dot(c, LUM))*1.35 + c*0.15, 0.4*smoothstep(-0.3, -1.0, vFlip));
   }
-  float a = clamp(1.25*smoothstep(vSoft, -vSoft, d), 0.0, 1.0);   // a leaf is opaque: only its rim is soft
+  float a = smoothstep(vSoft, -vSoft, d);
+  if (vKind < 0.5) a = clamp(1.25*a, 0.0, 1.0);    // a bush leaf is opaque: only its rim is soft
   if (a < 0.003) discard;
   vec3 col = grade(c);
   col = mix(col, 1.0 - 0.2*exp(-(col - 0.8)/0.2), step(0.8, col));
@@ -1056,7 +1060,7 @@ try {
   const rigSrc = 'img/rig.json';
   const [maps, sky, fill, plate, seabed, sea, objects, leafRGB, rig] = await Promise.all([
     loadImage('img/maps.png'), loadImage('img/sky.png'), loadImage('img/skyfill.png'), loadImage(SCENE.plate),
-    loadImage('img/seabed.webp'), loadImage('img/sea.png'), loadImage('img/objects.webp'), loadImage('img/leafcol.webp'),
+    loadImage('img/seabed.webp'), loadImage('img/sea.png'), loadImage('img/objects.webp'), loadImage('img/leafrgb.webp'),
     typeof rigSrc === 'string' ? fetch(rigSrc).then(r => r.json()) : rigSrc]);
   gl.useProgram(prog);
   texture(4, plate, {srgb: true, mips: true}); gl.uniform1i(U.uPlate, 4);

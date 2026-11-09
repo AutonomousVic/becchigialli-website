@@ -15,7 +15,7 @@ backlight) stays where the photo has it.
             the bushes along the bottom, softer where the photo is out of focus there.
   twigs     on the branch on the right, the segments of the skeleton, thin and dark.
 
-Output: img/rig.json, and img/leafcol.webp (the leaves' colour, carried over their soft rim). Review image: tools/out/foliage.jpg (the leaves drawn still, over the plate).
+Output: img/rig.json. Review image: tools/out/foliage.jpg (the leaves drawn still, over the plate).
 """
 import os, json, base64
 from collections import deque
@@ -67,7 +67,8 @@ def main():
     plant = ((H < 70) & (S > 40)) | (V < 55)
     branch = (xx > 790) & (yy < 1010)          # the branch on the right: its matte is right as it is
     mask = (leafA > 0.45) & np.where(branch, ~((H >= 79) & (H <= 112) & (S > 45) & (V > 70)), plant & ~waterish)
-    mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)).astype(bool)
+    opened = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)).astype(bool)
+    mask = np.where(branch, mask, opened)
     mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)).astype(bool)
     n, lab, st, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
     keep = np.zeros(n, bool)
@@ -136,10 +137,17 @@ def main():
     # over the soft, out-of-focus rim (where the photo shows as much sea as leaf), so a leaf at the
     # edge of a bush is green, not the colour of the water behind it
     F = cv2.imread(os.path.join(OUT, 'leafrgb.webp')).astype(np.float32)
-    sure = (leafA > 0.85) & mask & ~waterish
-    sure = cv2.erode(sure.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
-    F = np.where(sure[..., None], F, maps.pull_push(F, sure))
-    cv2.imwrite(os.path.join(OUT, 'leafcol.webp'), np.clip(F, 0, 255).astype(np.uint8), [cv2.IMWRITE_WEBP_QUALITY, 85])
+    # the bushes along the bottom do not take the photo's colours (out of focus, half sea): a
+    # palette of their own greens, lighter on the outside of the bush where the sun reaches,
+    # darker deep inside
+    inside = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5)
+    def bush_colour(x, y, layer):
+        depth = np.clip(inside[int(y), int(x)] / 28.0, 0, 1)
+        hue = 34 + 9 * rng.random()                                  # OpenCV hue: yellow-green .. green
+        sat = 150 + 60 * rng.random()
+        val = (205 - 120 * depth) * (0.8 + 0.3 * rng.random()) * (0.85 if layer == 0 else 1.0)
+        hsv_ = np.uint8([[[hue, min(sat, 255), np.clip(val, 30, 235)]]])
+        return cv2.cvtColor(hsv_, cv2.COLOR_HSV2BGR)[0, 0].astype(np.float32)
     g = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY).astype(np.float32)
     sharp = np.sqrt(cv2.GaussianBlur(cv2.Laplacian(g, cv2.CV_32F) ** 2, (0, 0), 10))
     right = mask & (xx > 790) & (yy < 1010)
@@ -163,10 +171,13 @@ def main():
                 r = max(1, int(L * 0.35))
                 y0, y1, x0, x1 = max(0, yi - r), min(h, yi + r + 1), max(0, xi - r), min(w, xi + r + 1)
                 sub = mask[y0:y1, x0:x1]
-                col = F[y0:y1, x0:x1][sub].mean(0) if sub.any() else F[yi, xi]
-                col = col * (0.94 + 0.12 * rng.random()) * (0.92 if layer == 0 else 1.0)   # the lower layer a touch darker
+                if oak:
+                    col = F[y0:y1, x0:x1][sub].mean(0) if sub.any() else F[yi, xi]
+                    col = col * (0.94 + 0.12 * rng.random()) * (0.92 if layer == 0 else 1.0)   # the lower layer a touch darker
+                else:
+                    col = bush_colour(x, y, layer)
                 s_loc = sharp[yi, xi]
-                soft = float(np.clip(1.6 - s_loc / 60.0, 0.6, 1.1))
+                soft = float(np.clip(2.0 - s_loc / 50.0, 0.6, 1.7)) if oak else float(np.clip(1.6 - s_loc / 60.0, 0.6, 1.1))
                 leaves.append((nd_i, x - nd['px'], y - nd['py'], L, ang, col[2], col[1], col[0], soft,
                                1 if oak else 0, rng.random()))
     print('leaves', len(leaves))

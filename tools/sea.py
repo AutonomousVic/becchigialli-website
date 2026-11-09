@@ -71,6 +71,12 @@ def main():
     W &= yy > HORIZON
     W = cv2.morphologyEx(W.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)).astype(bool)
     W = maps.largest_touching(W, [(600, 900), (1050, 420), (500, 1100), (950, 700)])
+    # out by the far shore the trees reach over the water's edge: they are land, the sea stops at them
+    hsv0 = cv2.cvtColor(M['im'], cv2.COLOR_BGR2HSV).astype(np.float32)
+    treeish = ((hsv0[..., 0] < 75) | (hsv0[..., 2] < 80)) & (yy < 600) & (xx > 700)
+    treeish = cv2.dilate(cv2.morphologyEx(treeish.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)), np.ones((3, 3), np.uint8)).astype(bool)
+    W &= ~(treeish & ~M['right_zone'])
+    W = maps.largest_touching(W, [(600, 900), (1050, 420), (500, 1100), (950, 700)])
     grey = cv2.cvtColor(M['im'], cv2.COLOR_BGR2GRAY).astype(np.float32) / 255
     cover = maps.guided(grey, W.astype(np.float32), 2, 1e-3)
     cover = np.where(cv2.dilate(W.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool), cover, 0)
