@@ -562,7 +562,7 @@ void main(){
     c *= 1.0 + 0.16*vFlip;
     c = mix(c, vec3(dot(c, LUM))*1.35 + c*0.15, 0.4*smoothstep(-0.3, -1.0, vFlip));
   }
-  float a = smoothstep(vSoft, -vSoft, d);
+  float a = clamp(1.25*smoothstep(vSoft, -vSoft, d), 0.0, 1.0);   // a leaf is opaque: only its rim is soft
   if (a < 0.003) discard;
   vec3 col = grade(c);
   col = mix(col, 1.0 - 0.2*exp(-(col - 0.8)/0.2), step(0.8, col));
@@ -1056,7 +1056,7 @@ try {
   const rigSrc = 'img/rig.json';
   const [maps, sky, fill, plate, seabed, sea, objects, leafRGB, rig] = await Promise.all([
     loadImage('img/maps.png'), loadImage('img/sky.png'), loadImage('img/skyfill.png'), loadImage(SCENE.plate),
-    loadImage('img/seabed.webp'), loadImage('img/sea.png'), loadImage('img/objects.webp'), loadImage('img/leafrgb.webp'),
+    loadImage('img/seabed.webp'), loadImage('img/sea.png'), loadImage('img/objects.webp'), loadImage('img/leafcol.webp'),
     typeof rigSrc === 'string' ? fetch(rigSrc).then(r => r.json()) : rigSrc]);
   gl.useProgram(prog);
   texture(4, plate, {srgb: true, mips: true}); gl.uniform1i(U.uPlate, 4);
@@ -1066,7 +1066,7 @@ try {
   texture(10, seabed, {srgb: true}); gl.uniform1i(U.uSeabed, 10);
   texture(11, sea); gl.uniform1i(U.uSea, 11);
   texture(12, objects, {srgb: true}); gl.uniform1i(U.uObjects, 12);
-  texture(6, leafRGB, {srgb: true});          // the photo's leaves: the detail the drawn leaves carry
+  texture(6, leafRGB, {srgb: true});          // the photo's leaves (tools/foliage.py): the detail the drawn leaves carry
   gl.uniform1i(U.uWaveA, 8); gl.uniform1i(U.uWaveB, 9);
   setupFoliage(rig);
   gl.useProgram(prog); gl.bindVertexArray(mainVAO);

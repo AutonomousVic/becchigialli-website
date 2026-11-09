@@ -15,7 +15,7 @@ backlight) stays where the photo has it.
             the bushes along the bottom, softer where the photo is out of focus there.
   twigs     on the branch on the right, the segments of the skeleton, thin and dark.
 
-Output: img/rig.json. Review image: tools/out/foliage.jpg (the leaves drawn still, over the plate).
+Output: img/rig.json, and img/leafcol.webp (the leaves' colour, carried over their soft rim). Review image: tools/out/foliage.jpg (the leaves drawn still, over the plate).
 """
 import os, json, base64
 from collections import deque
@@ -61,8 +61,13 @@ def main():
     hsv = cv2.cvtColor(im, cv2.COLOR_BGR2HSV).astype(np.float32)
     H, S, V = hsv[..., 0], hsv[..., 1], hsv[..., 2]
     # the leaves only: the matte, without the water and the rock it took in along its edges
-    waterish = (H >= 79) & (H <= 112) & (S > 45) & (V > 70)
-    mask = (leafA > 0.45) & ~waterish
+    waterish = (H >= 72) & (H <= 115) & (S > 30)
+    # only where the photo shows plant: green-yellow, or dark (shade, twigs); never the sea the
+    # old matte took in along the bushes
+    plant = ((H < 70) & (S > 40)) | (V < 55)
+    branch = (xx > 790) & (yy < 1010)          # the branch on the right: its matte is right as it is
+    mask = (leafA > 0.45) & np.where(branch, ~((H >= 79) & (H <= 112) & (S > 45) & (V > 70)), plant & ~waterish)
+    mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)).astype(bool)
     mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)).astype(bool)
     n, lab, st, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
     keep = np.zeros(n, bool)
@@ -127,8 +132,14 @@ def main():
         nd['phase'] = float(rng.random() * 6.2832)
     print('nodes', len(nodes))
 
-    # ---- leaves
+    # ---- leaves. Their colour: the photo's leaves where they are surely leaves, carried outwards
+    # over the soft, out-of-focus rim (where the photo shows as much sea as leaf), so a leaf at the
+    # edge of a bush is green, not the colour of the water behind it
     F = cv2.imread(os.path.join(OUT, 'leafrgb.webp')).astype(np.float32)
+    sure = (leafA > 0.85) & mask & ~waterish
+    sure = cv2.erode(sure.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+    F = np.where(sure[..., None], F, maps.pull_push(F, sure))
+    cv2.imwrite(os.path.join(OUT, 'leafcol.webp'), np.clip(F, 0, 255).astype(np.uint8), [cv2.IMWRITE_WEBP_QUALITY, 85])
     g = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY).astype(np.float32)
     sharp = np.sqrt(cv2.GaussianBlur(cv2.Laplacian(g, cv2.CV_32F) ** 2, (0, 0), 10))
     right = mask & (xx > 790) & (yy < 1010)
@@ -142,7 +153,7 @@ def main():
                 if not (0 <= xi < w and 0 <= yi < h) or not mask[yi, xi]: continue
                 oak = bool(right[yi, xi])
                 if layer == 2 and oak: continue              # the third layer only thickens the bushes
-                L = (13.0 if oak else 18.0) * (0.75 + 0.5 * rng.random()) * (1.0 if layer == 0 else 0.85)
+                L = (13.0 if oak else 21.0) * (0.75 + 0.5 * rng.random()) * (1.0 if layer == 0 else 0.85)
                 nd_i = int(node_lab[yi, xi])
                 if nd_i < 0: continue
                 nd = nodes[nd_i]
@@ -155,7 +166,7 @@ def main():
                 col = F[y0:y1, x0:x1][sub].mean(0) if sub.any() else F[yi, xi]
                 col = col * (0.94 + 0.12 * rng.random()) * (0.92 if layer == 0 else 1.0)   # the lower layer a touch darker
                 s_loc = sharp[yi, xi]
-                soft = float(np.clip(2.0 - s_loc / 50.0, 0.6, 1.7))
+                soft = float(np.clip(1.6 - s_loc / 60.0, 0.6, 1.1))
                 leaves.append((nd_i, x - nd['px'], y - nd['py'], L, ang, col[2], col[1], col[0], soft,
                                1 if oak else 0, rng.random()))
     print('leaves', len(leaves))
