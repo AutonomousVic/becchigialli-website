@@ -175,7 +175,7 @@ float lobe(vec3 N, vec3 V, vec3 L, float r){   // a light's highlight on facets 
   float c = max(dot(N, H), 1e-3), c2 = c*c;
   return exp(-(1.0 - c2)/(c2*r*r))/(3.14159*r*r*c2*c2)*0.25/max(dot(N, -V), 0.05);
 }
-const float CAUSTIC = 0.8;
+const float CAUSTIC = 0.45;
 // the long swell's height (m) at a point of the sea, at a time
 float swellH(vec2 X, float t){
   return uSwA*(cos(dot(uSwK.xy, X) - uSwW.x*t) + cos(dot(uSwK.zw, X) - uSwW.y*t + 1.7));
@@ -227,11 +227,17 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float expo, float aspect){
   float floorK = (1.0 - smoothstep(0.35, 0.9, depth))*uGlint*(1.0 - lostB)*clamp(uAmp.y/0.09, 0.3, 1.5);
   vec2 Xf = X + sl*dm*0.25;
   float lap = (texture(uWaveB, ROT*Xf/4.0 + 0.37).a + texture(uWaveB, ROT2*Xf/2.9 + vec2(0.61, 0.13)).a - 1.0)*4.24;
-  float caus = clamp(1.0/(1.0 + 0.5*lap), 0.7, 2.0);
-  bed *= mix(1.0, 0.88*caus, floorK*CAUSTIC);
+  // thin bright lines where the curvature changes sign (the focus lines), on an untouched floor:
+  // never a dark net
+  float caus = exp(-lap*lap/0.06);
+  bed *= 1.0 + floorK*CAUSTIC*(caus - 0.16);
   vec3 body = grade(bed);
   // (softened where it is large, out at the slant, so the long waves do not stripe the sea black)
   float dF = F - F0; dF /= 1.0 + 4.0*abs(dF);
+  // a facet turned towards the camera shows the water with less sky in it, but the photo's colour
+  // is already that water seen through a calm surface: darken it only gently, or the clear
+  // shallows fill with black specks
+  dF = dF > 0.0 ? dF : 0.3*dF;
   vec3 col = body + dF*(skyR - body);
   // at dusk and at night the sea mirrors a sky that is not the photo's: the difference, on average
   vec2 qf = dirToImg(vec3(V.xy, -V.z)); qf.y = min(qf.y, uHorizonY - 0.003);
@@ -248,8 +254,9 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float expo, float aspect){
   float dShore = max((sea.b*255.0 - 128.0)*0.5, 0.0)/pxm;            // metres from the rock
   float up = surge(X, 1.5);
   float reach = (0.8 + 0.2*uWind)*(0.25 + 0.75*up)*(0.4 + 0.6*expo);
-  float dens = exp(-dShore/max(reach, 0.05))*(0.3 + 0.7*expo)*pow(up, 1.5)
-             + 0.1*exp(-dShore/0.2)*(0.4 + 0.6*expo);
+  // only some stretches of shore at a time: the crest breaks here, not there (no outline)
+  float patchK = smoothstep(0.45, 0.75, vnoise(X*0.32 + vec2(0.035, -0.02)*uSeaT));
+  float dens = exp(-dShore/max(reach*(0.6 + 0.8*patchK), 0.05))*(0.15 + 0.85*expo)*pow(up, 1.5)*patchK;
   float lace = 0.5*(B.b + B2.b) + 0.5*vnoise(X*2.6 + vec2(0.11, 0.07)*uSeaT) + 0.25*(vnoise(X*7.0 - 0.2*uSeaT) - 0.5);
   float foam = clamp(dens*3.0, 0.0, 1.0)*smoothstep(0.6 - 0.15*dens, 0.78 - 0.15*dens, lace);
   foam += smoothstep(2.4, 3.2, (A.b - 0.5)*6.0 + 0.6*(B.b - 0.5)*6.0)*smoothstep(7.0, 14.0, uWind)*(1.0 - lostA)*0.7;
