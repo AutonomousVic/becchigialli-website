@@ -215,6 +215,7 @@ def main():
     # the exposure is smooth: it takes the drift's place in maps.png (half resolution, B)
     mp = cv2.imread(os.path.join(OUT, 'maps.png'))
     mp[..., 0] = np.clip(cv2.resize(exp_.astype(np.float32), (mp.shape[1], mp.shape[0]), interpolation=cv2.INTER_AREA) * 255 + 0.5, 0, 255).astype(np.uint8)
+    mp[..., 1] = 0          # G: far mountains to tint at dusk (none marked on this photo)
     cv2.imwrite(os.path.join(OUT, 'maps.png'), mp, [cv2.IMWRITE_PNG_COMPRESSION, 9])
 
     cam = dict(f=F, cx=CX, cy=CY, horizon=HORIZON, pitch=float(PITCH), height=HEIGHT, swell=[float(k[0]), float(k[1])],

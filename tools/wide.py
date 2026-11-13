@@ -42,6 +42,10 @@ WATER = [(1920, 500), (1655, 500), (1648, 640), (1665, 700), (1690, 760), (1714,
          (790, 1186), (600, 1188), (500, 1186), (448, 1196), (446, 1252), (262, 1252), (248, 1232),
          (212, 1250), (200, 1331), (1920, 1331)]
 BUSH = [(0, 1190), (340, 1190), (340, 1331), (0, 1331)]
+# the far mountains in the haze on the right, behind the pine: their ridge (below it, down to the
+# sea, is land; the sun goes down behind it)
+RIDGE = [(1370, 450), (1420, 440), (1450, 420), (1480, 410), (1520, 404), (1560, 402), (1600, 404), (1640, 410),
+         (1680, 414), (1720, 420), (1760, 422), (1790, 412), (1820, 406), (1860, 401), (1920, 398)]
 BOAT = (1790, 978, 64, 52)                 # centre x, y, half width, half height (with its shadow)
 
 
@@ -73,7 +77,10 @@ def main():
     # ---- sky: pale and blue, connected to the top right corner, above the horizon
     skyish = (S < 95) & (V > 205) & (H > 84) & (H < 112) & (yy < HORIZON)
     skyish = cv2.morphologyEx(skyish.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)).astype(bool)
-    sky = maps.largest_touching(skyish, [(w - 5, 5), (w - 5, 300), (1300, 20)])
+    # the big sky, and the patch of it between the trees at the top of the hill
+    sky = maps.largest_touching(skyish, [(w - 5, 5), (w - 5, 300), (1300, 20), (900, 5), (960, 30)])
+    mountains = poly(h, w, RIDGE + [(1920, HORIZON + 2), (1370, HORIZON + 2)])
+    sky &= ~mountains
     sky_a = maps.guided(grey, sky.astype(np.float32), 6, 2e-3)
     sky_a[yy >= HORIZON] = 0
     sky_a = np.where(sky_a < 0.04, 0, sky_a).astype(np.float32)
@@ -181,7 +188,13 @@ def main():
     bgr = np.dstack([np.clip(128 + 2 * sd, 0, 255), np.clip(depth, 0, 1) * 255, np.clip(cover, 0, 1) * 255])
     cv2.imwrite(os.path.join(OUT, 'sea.png'), np.round(bgr).astype(np.uint8), [cv2.IMWRITE_PNG_COMPRESSION, 9])
     half = cv2.resize(exp_, (w // 2, h // 2), interpolation=cv2.INTER_AREA)
-    mp = np.dstack([np.clip(half * 255 + 0.5, 0, 255), np.zeros_like(half), np.zeros_like(half)]).astype(np.uint8)
+    # G: the far mountains in the haze; at dusk and at night they take the colour of the sky behind them
+    hazy = (H >= 84) & (H <= 114) & (V > 150) & (S < 150)          # the bluish haze, not the pine in front of it
+    hazy = cv2.morphologyEx(hazy.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)).astype(bool)
+    haze = (mountains & hazy & ~W) | (cv2.dilate(mountains.astype(np.uint8), np.ones((7, 7), np.uint8)).astype(bool) & (sky_a > 0.02) & (sky_a < 0.98))
+    haze = cv2.GaussianBlur(haze.astype(np.float32), (0, 0), 1.0)
+    hz = cv2.resize(haze, (w // 2, h // 2), interpolation=cv2.INTER_AREA)
+    mp = np.dstack([np.clip(half * 255 + 0.5, 0, 255), np.clip(hz * 255 + 0.5, 0, 255), np.zeros_like(half)]).astype(np.uint8)
     cv2.imwrite(os.path.join(OUT, 'maps.png'), mp, [cv2.IMWRITE_PNG_COMPRESSION, 9])
 
     # ---- the bush, leaf by leaf; the poster

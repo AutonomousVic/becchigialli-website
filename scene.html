@@ -62,6 +62,7 @@ const SCENES = {
     swell: [-0.9536, 0.3011],
     // what floats (boxes in photo px, from tools/sea.py): swimmer, boat, buoy; and the boom's two ends
     objects: [[220, 967, 268, 996], [1016, 437, 1044, 451], [933, 484, 940, 490]],
+    kinds: ['swimmer', 'boat', 'buoy'],
     boom: [798, 623, 1066, 683],
     foam: 1,
     // the far coast's lights: along this row, between these columns
@@ -88,13 +89,15 @@ const SCENES = {
   wide: {
     w: 1920, h: 1331,
     horizonY: 503/1331,                 // where the haze turns into sea, on the right
-    focal: { landscape: [0.55, 0.5], portrait: [0.55, 0.5] },
-    sunSet: [0.995, 0.36], sunRise: [0.30, 0.0], sunArc: 0.12,   // it sets over the open sea, right of the pine
+    focal: { landscape: [0.55, 0.62], portrait: [0.55, 0.5] },   // wide screens keep the villas and the shallows
+    sunSet: [0.97, 0.36], sunRise: [0.30, 0.0], sunArc: 0.06,    // right of the pine, down behind the far mountains
     moon: [0.84, 0.13],
     // tools/wide.py: a level horizon at row 503, a ~60 degree lens, 20 m above the water
     camera: { f: 1663, cx: 960, cy: 665.5, pitch: 0.097406, height: 20 },
     swell: [-0.7071, -0.7071],
-    objects: [[1739, 932, 1838, 1012], NONE, NONE],
+    objects: [[1742, 936, 1842, 1014], NONE, NONE],
+    kinds: ['boat', 'none', 'none'],
+    glare: 0.45,                        // seen lower and closer to the water: the sun's path would blind
     boom: NONE,
     foam: 0.12,
     coast: { y: 499, x0: 1665, x1: 1915, up: 60 },
@@ -115,9 +118,20 @@ const SCENES = {
     ]
   }
 };
+// the boat goes back to harbour late in the evening and is out again in the morning; the swimmer
+// only swims by day
+function boatOn(hour){
+  const late = hour < 12 ? hour + 24 : hour;
+  return 1 - smooth(23.0, 23.3, late)*(1 - smooth(31.5, 31.8, late));
+}
 const PICK = QS.get('photo') === 'wide' || QS.get('photo') === 'tall' ? QS.get('photo') : (innerWidth > innerHeight ? 'wide' : 'tall');
 const SCENE = SCENES[PICK];
 const LIGHT_PX = SCENE.lights.slice();
+SCENE.kinds.forEach((k, i) => {
+  if (k !== 'boat') return;
+  const [x0, y0, x1, y1] = SCENE.objects[i], s = (x1 - x0)/100;
+  LIGHT_PX.push([x0 + 0.5*(x1 - x0), y0 + 4*s, 2.4*s, 3, 'boat'], [x0 + 0.42*(x1 - x0), y0 + 0.45*(y1 - y0), 2.8*s, 1, 'boat']);
+});
 // a photo pixel -> the direction the camera looks along it (x right, y away, z up)
 function camRay(px, py){
   const c = SCENE.camera, u = (px - c.cx)/c.f, v = (py - c.cy)/c.f, cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
@@ -166,6 +180,7 @@ uniform vec3 uSunDir, uSunSpec, uMoonDir, uMoonSpec;
 uniform float uWind;                // m/s
 uniform float uFoam;                // how much the swell breaks on this photo's rocks (a close shore: less)
 uniform vec4 uObjBox[3];            // swimmer, boat, buoy: photo px boxes
+uniform float uObjOn[3];            // each one there (1) or gone (0), by the hour
 uniform vec4 uBoom;                 // the floating boom, from end to end (photo px)
 uniform vec3 uWB, uZenith, uHorizon, uGlow, uSunCol, uLift;
 uniform vec2 uSunPos, uMoonPos, uMoonPhase;
@@ -316,24 +331,6 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float expo, float aspect){
   return max(col, 0.0);
 }
 
-// What goes where the screen is wider than the photo: the photo's own colours, mirrored out
-// from its edge, blurred more the further out, and darkened. Nothing there moves.
-vec3 sideFill(vec2 q){
-  float dx = q.x < 0.0 ? -q.x : max(q.x - 1.0, 0.0);              // photo widths outside the photo
-  float mx = 1.0 - abs(1.0 - mod(q.x, 2.0)), my = clamp(q.y, 0.0, 1.0);
-  // the photo's own colours, mirrored out from its edge and heavily blurred: a ring of samples
-  // on its coarsest levels, turned per pixel so no grid shows; only the light and the colours
-  // remain, no shapes
-  float r = 0.06 + 0.08*min(dx, 1.0), a0 = 6.2832*fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-  vec3 c = textureLod(uPlate, vec2(mx, my), 7.0).rgb;
-  for (int i = 0; i < 6; i++){
-    float a = a0 + float(i)*1.0472;
-    vec2 t = vec2(mx + cos(a)*r, my + sin(a)*r*1.1);
-    t.x = 1.0 - abs(1.0 - mod(t.x, 2.0));
-    c += textureLod(uPlate, vec2(t.x, clamp(t.y, 0.0, 1.0)), 7.0).rgb;
-  }
-  return grade(c/7.0)*(0.97 - 0.5*smoothstep(0.0, 0.35, dx))*(1.0 - 0.6*uNight);
-}
 void finish(vec3 col, vec2 s){
   // gentle highlight shoulder: the photo stays itself at noon
   col = max(col, 0.0);
@@ -349,7 +346,6 @@ void main(){
   // the camera does not move: a screen pixel is a photo pixel, nothing else
   vec2 s = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y)/uRes;
   vec2 q = uOff + s*uVis;
-  if (q.x < 0.0 || q.x > 1.0){ finish(sideFill(q), s); return; }
   float aspect = uImg.x/uImg.y;
   vec4 m = texture(uMaps, q);
   vec2 ip = q*uImg;
@@ -372,14 +368,17 @@ void main(){
     land *= 1.0 - 0.32*wet;
   }
   vec3 col = grade(land);
+  // the far mountains in the haze: at dusk and at night they take the sky's colour, a shade darker
+  if (m.g > 0.004) col = mix(col, drawnSky(q, aspect)*0.72, min(1.0, m.g*uSkyMix*0.95));
 
   // ---- the sea, then what floats on it (rising and falling with the swell); the leaves come after, drawn on top
   if (sea.r > 0.004){
     col = mix(col, water(q, ip, sea, m.b, aspect), sea.r);
-    vec2 qo = q;
+    vec2 qo = q; float on = 1.0;
     for (int i = 0; i < 3; i++){
       vec4 bx = uObjBox[i];
       if (ip.x > bx.x - 4.0 && ip.x < bx.z + 4.0 && ip.y > bx.y - 16.0 && ip.y < bx.w + 16.0){
+        on = uObjOn[i];
         vec3 Pa = seaPoint(vec2(0.5*(bx.x + bx.z), bx.w));
         qo.y += swellH(Pa.xy, uSeaT)*0.9*uCam.x/Pa.z/uImg.y;
       }
@@ -392,7 +391,7 @@ void main(){
       qo.y += swellH(Pb.xy, uSeaT)*0.9*uCam.x/Pb.z/uImg.y;
     }
     vec4 ob = texture(uObjects, qo);
-    col = mix(col, grade(ob.rgb), ob.a);
+    col = mix(col, grade(ob.rgb), ob.a*on);
   }
 
   // ---- sky, only where there is sky: the photo's own by day, a drawn one with sun, moon and stars
@@ -442,10 +441,6 @@ void main(){
   // ---- lights at night: windows, lamps, the far coast, from the light map drawn in JS
   if (uLightsK > 0.001) col += texture(uLights, q).rgb*${LIGHT_SCALE.toFixed(2)}*uLightsK;
 
-  // into the side fill over the photo's last 70 px, on the sides that have one
-  float fe = 70.0/uImg.x;
-  float ef = (uOff.x < -1e-4 ? smoothstep(0.0, fe, q.x) : 1.0)*(uOff.x + uVis.x > 1.0001 ? smoothstep(0.0, fe, 1.0 - q.x) : 1.0);
-  if (ef < 1.0) col = mix(sideFill(q), max(col, 0.0), ef);
   finish(col, s);
 }`;
 
@@ -642,8 +637,6 @@ void main(){
     c = mix(c, vec3(dot(c, LUM))*1.35 + c*0.15, 0.4*smoothstep(-0.3, -1.0, vFlip));
   }
   float a = smoothstep(vSoft, -vSoft, d);
-  // like the photo, into the side fill at its edges
-  a *= (uOff.x < -1e-4 ? smoothstep(0.0, 70.0, vP.x) : 1.0)*(uOff.x + uVis.x > 1.0001 ? smoothstep(0.0, 70.0, uImg.x - vP.x) : 1.0);
   if (a < 0.003) discard;
   vec3 col = grade(c);
   col = mix(col, 1.0 - 0.2*exp(-(col - 0.8)/0.2), step(0.8, col));
@@ -842,16 +835,16 @@ mo.addEventListener('input', () => {
 mo.value = Math.round(state.motion*100);
 
 /* ---------- night lights: drawn once per change into a texture, not computed per pixel ---------- */
-const LIGHT_COL = [[1.0, 0.72, 0.42], [1.0, 0.56, 0.22], [1.0, 0.78, 0.55]];
+const LIGHT_COL = [[1.0, 0.72, 0.42], [1.0, 0.56, 0.22], [1.0, 0.78, 0.55], [1.0, 0.94, 0.84]];   // ... the boat's anchor light
 const lights = LIGHT_PX.map((l, i) => {
   let s = 977 + i*7919; const r = () => { s = (s*16807) % 2147483647; return s/2147483647; };
   r();
   const kind = l[3];
-  return { x: l[0], y: l[1], rad: l[2], kind,
-           onEl: kind === 1 ? -1.0 - r()*1.5 : -0.8 - r()*6.5,
+  return { x: l[0], y: l[1], rad: l[2], kind, boat: l[4] === 'boat',
+           onEl: kind >= 1 ? -1.0 - r()*1.5 : -0.8 - r()*6.5,
            off: kind === 0 && r() > 0.45 ? 22.8 + r()*3.8 : 99,
            col: LIGHT_COL[kind].map(c => c*(0.9 + 0.2*r())),
-           gain: kind === 2 ? 0.9 : kind === 1 ? 1.3 : 1.0, on: 0 };
+           gain: kind === 2 ? 0.9 : kind === 1 ? 1.3 : kind === 3 ? 1.6 : 1.0, on: 0 };
 });
 // each light's glow, once: a soft window (taller than wide, light spilling on the wall) or a lamp
 for (const l of lights){
@@ -886,7 +879,7 @@ function updateLights(el, hour, now, eager){
   const late = hour < 12 ? hour + 24 : hour;
   let change = lightsShown ? 0 : 1;
   for (const l of lights){
-    l.on = smooth(l.onEl + 0.6, l.onEl - 0.6, el)*(1 - smooth(l.off, l.off + 0.25, late));
+    l.on = smooth(l.onEl + 0.6, l.onEl - 0.6, el)*(1 - smooth(l.off, l.off + 0.25, late))*(l.boat ? boatOn(hour) : 1);
     if (lightsShown) change = Math.max(change, Math.abs(l.on - lightsShown.get(l)));
   }
   if (change < 0.015 || now - lightsAt < (eager ? 120 : 500)) return;
@@ -925,6 +918,26 @@ function updateLights(el, hour, now, eager){
   lightsShown = new Map(lights.map(l => [l, l.on])); lightsAt = now;
 }
 
+/* ---------- how much of the sun's disc is in open sky (behind a mountain or a tree: none) ---------- */
+let skyData = null;
+function readSky(img){
+  try {
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0);
+    skyData = { w: img.width, h: img.height, d: x.getImageData(0, 0, img.width, img.height).data };
+  } catch (e){ skyData = null; }
+}
+function sunInSky(p){
+  if (!skyData || p[0] > 1.5) return 1;
+  const r = 0.0105*SCENE.h, cx = p[0]*SCENE.w, cy = p[1]*SCENE.h;
+  let a = 0, n = 0;
+  for (const [dx, dy] of [[0, 0], [-r, 0], [r, 0], [0, -r], [0, r], [-0.7*r, 0.7*r], [0.7*r, 0.7*r]]){
+    const x = Math.round((cx + dx)*skyData.w/SCENE.w), y = Math.round((cy + dy)*skyData.h/SCENE.h);
+    a += x >= 0 && y >= 0 && x < skyData.w && y < skyData.h ? skyData.d[(y*skyData.w + x)*4]/255 : 0; n++;
+  }
+  return a/n;
+}
+
 /* ---------- size: the canvas holds the photo's own pixels, never more than the screen's ---------- */
 const DPR = window.devicePixelRatio || 1;
 let quality = 1;                       // lowered only if frames come too slowly
@@ -938,11 +951,9 @@ function layout(){
   if (view && view.key === key) return view;
   viewW = w; viewH = h;
   const A = w/h, a = SCENE.w/SCENE.h;
-  // the photo always at its full height: a narrower screen crops its sides, a wider one has room left
-  // at the sides, filled in the shader
-  const vis = [A/a, 1];
-  const f = (A >= 1 ? SCENE.focal.landscape : SCENE.focal.portrait).slice();
-  if (A > a) f[0] = 0.5;                // wider than the photo: all of it, centred, the sides filled in the shader
+  // the photo always fills the screen: cropped around its focal point, never bands at the sides
+  const vis = A > a ? [1, a/A] : [A/a, 1];
+  const f = A >= 1 ? SCENE.focal.landscape : SCENE.focal.portrait;
   const density = vis[1]*SCENE.h/h;     // photo pixels per CSS pixel
   let W, H, uv, off;
   if (density <= DPR && quality === 1){
@@ -1015,6 +1026,7 @@ function frame(now){
   gl.uniform1f(U.uWind, wind);
   gl.uniform1f(U.uFoam, SCENE.foam);
   gl.uniform4fv(U.uObjBox, SCENE.objects.flat());
+  gl.uniform1fv(U.uObjOn, SCENE.kinds.map(k => k === 'boat' ? boatOn(hour) : k === 'swimmer' ? smooth(-1, 4, el) : 1));
   gl.uniform4fv(U.uBoom, SCENE.boom);
   // the sun goes round: up behind the hill on the left, behind the camera at noon, down over the
   // far coast on the right (where the drawn sun sets)
@@ -1026,10 +1038,10 @@ function frame(now){
   }
   const er = Math.max(el, -2)*Math.PI/180;
   gl.uniform3f(U.uSunDir, Math.sin(phi)*Math.cos(er), Math.cos(phi)*Math.cos(er), Math.sin(er));
-  const sunK = 3.2*smooth(-1.5, 3, el)*(1 - 0.7*state.weather.cloud);
+  const sunK = 3.2*(SCENE.glare || 1)*smooth(-1.5, 3, el)*(1 - 0.7*state.weather.cloud)*sunInSky(sunPos);
   gl.uniform3fv(U.uSunSpec, sunCol.map(c => c*sunK));
   gl.uniform3fv(U.uMoonDir, camRay(SCENE.moon[0]*SCENE.w, SCENE.moon[1]*SCENE.h));
-  gl.uniform3fv(U.uMoonSpec, [0.75, 0.82, 1].map(c => c*0.22*moonVis));
+  gl.uniform3fv(U.uMoonSpec, [0.75, 0.82, 1].map(c => c*0.22*(SCENE.glare || 1)*moonVis));
   gl.uniform1f(U.uSpark, 0.22*smooth(4, 20, el)*(1 - 0.6*state.weather.cloud));
   gl.uniform1f(U.uStarTw, 0.08*Math.min(1, M));
   gl.uniform1f(U.uHorizonY, SCENE.horizonY);
@@ -1158,6 +1170,7 @@ try {
   texture(4, plate, {srgb: true, mips: true}); gl.uniform1i(U.uPlate, 4);
   texture(1, maps); gl.uniform1i(U.uMaps, 1);
   texture(2, sky, {red: true}); gl.uniform1i(U.uSky, 2);
+  readSky(sky);
   texture(3, fill, {srgb: true}); gl.uniform1i(U.uFill, 3);
   texture(10, seabed, {srgb: true}); gl.uniform1i(U.uSeabed, 10);
   texture(11, sea); gl.uniform1i(U.uSea, 11);

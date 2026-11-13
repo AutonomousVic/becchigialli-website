@@ -28,17 +28,14 @@
 
   /* until the scene's first frame: a light copy of the photo, toned for the hour and framed exactly
      as the scene frames it, over a tiny blurred placeholder that is there from the very first paint */
-  /* Two photos: the tall one upright (phones), the wide one on screens wider than tall, framed
-     as the scene frames them: cropped at the sides around the focal point, or whole and centred
-     once the screen is wider than the photo */
+  /* Two photos: the tall one upright (phones), the wide one on screens wider than tall, framed as
+     the scene frames them: filling the screen, cropped around the same focal point */
   #poster { position:fixed; inset:0; z-index:0; overflow:hidden;
             filter:brightness(var(--dim,1)) saturate(var(--sat,1)); }
   #poster::before, #poster::after { content:''; position:absolute; background-repeat:no-repeat; background-size:cover; background-position:43% 50%; }
   #poster::before { inset:-40px; background-image:var(--lqip); filter:blur(24px); }
   #poster::after { inset:0; background-image:url(img/poster.webp); }
-  @media (orientation: portrait) and (min-aspect-ratio: 1086/1200){ #poster::after { background-size:contain; background-position:center; } }
-  @media (orientation: landscape){ #poster::after { background-image:url(img/wide/poster.webp); background-position:55% 50%; } }
-  @media (orientation: landscape) and (min-aspect-ratio: 1920/1331){ #poster::after { background-size:contain; background-position:center; } }
+  @media (orientation: landscape){ #poster::after { background-image:url(img/wide/poster.webp); background-position:55% 62%; } }
   #scene-frame { position:fixed; inset:0; z-index:0; width:100%; height:100%; border:0; display:block;
                  pointer-events:none; opacity:0; transition:opacity 1.2s ease; background:transparent; }
   /* a veil at the bottom keeps the time readable over the bright sea; one at the top for the menu */
