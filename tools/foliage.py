@@ -70,6 +70,16 @@ def main():
     opened = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)).astype(bool)
     mask = np.where(branch, mask, opened)
     mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)).astype(bool)
+    F = cv2.imread(os.path.join(OUT, 'leafrgb.webp')).astype(np.float32)
+    build(im, plate, F, mask, branch, OUT, os.path.join(DBG, 'foliage.jpg'))
+
+
+def build(im, plate, F, mask, branch, out_dir, review):
+    """Skeleton, leaves and rig for one photo. im/plate: the photo and the photo without its foliage;
+    F: the foliage's own colour; mask: where the foliage is; branch: where it is a hanging branch
+    (oak leaves, twigs) rather than a bush; writes rig.json and leaftex.webp to out_dir."""
+    h, w = mask.shape
+    yy, xx = np.mgrid[0:h, 0:w]
     n, lab, st, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
     keep = np.zeros(n, bool)
     edge = np.zeros_like(mask)
@@ -136,29 +146,17 @@ def main():
     # ---- leaves. Their colour: the photo's leaves where they are surely leaves, carried outwards
     # over the soft, out-of-focus rim (where the photo shows as much sea as leaf), so a leaf at the
     # edge of a bush is green, not the colour of the water behind it
-    F = cv2.imread(os.path.join(OUT, 'leafrgb.webp')).astype(np.float32)
-    # the bushes along the bottom do not take the photo's colours (out of focus, half sea): a
-    # palette of their own greens, lighter on the outside of the bush where the sun reaches,
-    # darker deep inside
     # the bushes, as the branch: each leaf carries the photo's leaves where it sits. Around the bushes
     # the photo is out of focus and half sea: there the texture holds the plant's colour, carried out
     # from the plant, so a leaf at the rim never shows the water
     T = F.copy()
     bush = ~branch
     T = np.where((bush & ~mask)[..., None], maps.pull_push(F, mask), T)
-    cv2.imwrite(os.path.join(OUT, 'leaftex.webp'), np.clip(T, 0, 255).astype(np.uint8), [cv2.IMWRITE_WEBP_QUALITY, 85])
+    cv2.imwrite(os.path.join(out_dir, 'leaftex.webp'), np.clip(T, 0, 255).astype(np.uint8), [cv2.IMWRITE_WEBP_QUALITY, 85])
     F = T
-    inside = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5)
-    def bush_colour(x, y, layer):
-        depth = np.clip(inside[int(y), int(x)] / 28.0, 0, 1)
-        hue = 34 + 9 * rng.random()                                  # OpenCV hue: yellow-green .. green
-        sat = 150 + 60 * rng.random()
-        val = (205 - 120 * depth) * (0.8 + 0.3 * rng.random()) * (0.85 if layer == 0 else 1.0)
-        hsv_ = np.uint8([[[hue, min(sat, 255), np.clip(val, 30, 235)]]])
-        return cv2.cvtColor(hsv_, cv2.COLOR_HSV2BGR)[0, 0].astype(np.float32)
     g = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY).astype(np.float32)
     sharp = np.sqrt(cv2.GaussianBlur(cv2.Laplacian(g, cv2.CV_32F) ** 2, (0, 0), 10))
-    right = mask & (xx > 790) & (yy < 1010)
+    right = mask & branch
     leaves = []
     for layer, (cell, jit) in enumerate([(7.0, 0.9), (8.5, 0.9), (9.5, 1.0)]):
         for cy in np.arange(cell / 2, h, cell):
@@ -191,7 +189,7 @@ def main():
     twigs = []
     for i, nd in enumerate(nodes):
         p = nd['parent']
-        if p < 0 or not (nd['px'] > 790 and nd['py'] < 1010): continue
+        if p < 0 or not branch[min(h - 1, int(nd['py'])), min(w - 1, int(nd['px']))]: continue
         width = float(np.clip(0.6 + 2.2 * np.sqrt(mass[i] / total) ** 0.7, 0.6, 3.0))
         twigs.append((i, p, width))
     print('twigs', len(twigs))
@@ -212,9 +210,9 @@ def main():
         nodes=[[round(nd['px'], 2), round(nd['py'], 2), nd['parent'], round(nd['freq'], 3), round(nd['amp'], 5), round(nd['phase'], 3)] for nd in nodes],
         leaves=base64.b64encode(bytes(lv)).decode(), count=len(leaves),
         twigs=[[a, b, round(c, 2)] for (a, b, c) in twigs])
-    with open(os.path.join(OUT, 'rig.json'), 'w') as fh:
+    with open(os.path.join(out_dir, 'rig.json'), 'w') as fh:
         json.dump(rig, fh, separators=(',', ':'))
-    print('rig.json', os.path.getsize(os.path.join(OUT, 'rig.json')) // 1024, 'KB')
+    print('rig.json', os.path.getsize(os.path.join(out_dir, 'rig.json')) // 1024, 'KB')
 
     # ---- review: the leaves drawn still over the plate (ellipses, their colour)
     rev = plate.astype(np.uint8).copy()
@@ -226,7 +224,7 @@ def main():
         c = (int(nd['px'] + dx), int(nd['py'] + dy))
         cv2.ellipse(rev, c, (max(1, int(L / 2)), max(1, int(L * 0.3))), float(np.degrees(ang)), 0, 360,
                     (int(b), int(gch), int(r)), -1, cv2.LINE_AA)
-    cv2.imwrite(os.path.join(DBG, 'foliage.jpg'), np.hstack([im, rev]), [cv2.IMWRITE_JPEG_QUALITY, 90])
+    cv2.imwrite(review, np.hstack([im, rev]), [cv2.IMWRITE_JPEG_QUALITY, 90])
 
 
 if __name__ == '__main__':

@@ -42,22 +42,82 @@ function fail(reason){
   throw new Error(reason);
 }
 
-/* ---------- scene description (photo space: x right, y down, 0..1) ---------- */
-const SCENE = {
-  plate: 'img/plate.webp', w: 1086, h: 1200,
-  horizonY: 373/1200,                 // the far shoreline
-  focal: { landscape: [0.46, 0.42], portrait: [0.43, 0.5] },
-  // the setting sun goes down over the far coast on the right; at dawn it rises behind the hill
-  sunSet: [0.97, 0.20], sunRise: [0.15, 0.05],
-  moon: [0.83, 0.235],
-  // the camera found from the photo by tools/sea.py: a level horizon at row 373, a phone's lens,
-  // 29 m above the water; and where the long swell travels on the water (x right, y away)
-  camera: { f: 1170, cx: 543, cy: 600, pitch: 0.191636, height: 29 },
-  swell: [-0.9536, 0.3011],
-  // what floats (boxes in photo px, from tools/sea.py): swimmer, boat, buoy; and the boom's two ends
-  objects: [[220, 967, 268, 996], [1016, 437, 1044, 451], [933, 484, 940, 490]],
-  boom: [798, 623, 1066, 683]
+/* ---------- scene description (photo space: x right, y down, 0..1) ----------
+   Two photographs of the same villas: a tall one for phones and anything taller than wide, a wide
+   one for the screens wider than tall. Only the one in use is loaded; turning a tablet over
+   reloads the scene with the other. ?photo=tall|wide forces one. */
+// far away, never drawn: a box or a boom a photo does not have
+const NONE = [-200, -200, -190, -190];
+const SCENES = {
+  tall: {
+    w: 1086, h: 1200,
+    horizonY: 373/1200,                 // the far shoreline
+    focal: { landscape: [0.46, 0.42], portrait: [0.43, 0.5] },
+    // the setting sun goes down over the far coast on the right; at dawn it rises behind the hill
+    sunSet: [0.97, 0.20], sunRise: [0.15, 0.05],
+    moon: [0.83, 0.235],
+    // the camera found from the photo by tools/sea.py: a level horizon at row 373, a phone's lens,
+    // 29 m above the water; and where the long swell travels on the water (x right, y away)
+    camera: { f: 1170, cx: 543, cy: 600, pitch: 0.191636, height: 29 },
+    swell: [-0.9536, 0.3011],
+    // what floats (boxes in photo px, from tools/sea.py): swimmer, boat, buoy; and the boom's two ends
+    objects: [[220, 967, 268, 996], [1016, 437, 1044, 451], [933, 484, 940, 490]],
+    boom: [798, 623, 1066, 683],
+    foam: 1,
+    // the far coast's lights: along this row, between these columns
+    coast: { y: 371, x0: 912, x1: 1084, up: 14 },
+    files: { maps: 'img/maps.png', sky: 'img/sky.png', fill: 'img/skyfill.png', plate: 'img/plate.webp',
+             seabed: 'img/seabed.webp', sea: 'img/sea.png', objects: 'img/objects.webp', leaves: 'img/leaftex.webp',
+             rig: 'img/rig.json' },
+    // lit windows and lamps, in photo pixels: [x, y, radius px, kind] (0 warm window, 1 lamp, 2 far coast)
+    lights: [
+      // pink villa
+      [241,335,3.2,0],[101,389,3.4,0],[157,392,3.2,0],[185,392,3.2,0],[213,392,3.2,0],[241,392,3.4,0],[280,392,2.8,0],
+      [110,452,3.4,0],[180,450,3.4,0],[240,447,3.4,0],[276,440,2.6,0],[180,520,3.2,0],[130,522,3,0],
+      // yellow villa
+      [462,331,2.6,0],[480,331,2.6,0],[502,331,2.6,0],[537,329,3,0],[567,330,3,0],[675,332,2.8,0],
+      [460,386,2.6,0],[500,386,2.8,0],[580,382,3,0],[612,384,3,0],[642,384,3,0],[675,382,3,0],[707,435,3,0],
+      [470,440,3.6,0],[536,442,4,0],[580,440,3.4,0],[610,440,3.2,0],[630,440,3.2,0],[652,440,3.2,0],
+      [470,487,3,0],[447,492,3,0],[732,500,2.8,0],
+      // the small castle
+      [375,500,2.8,0],[400,498,2.8,0],[450,547,3,0],[475,547,3,0],[412,557,3,0],[330,556,3.2,0],[362,556,3.2,0],
+      // lamps along the path and on the tower
+      [360,362,2.4,1],[594,160,2.2,1],[150,213,2,1],[780,494,2.2,1],[848,500,2.2,1]
+    ]
+  },
+  wide: {
+    w: 1920, h: 1331,
+    horizonY: 503/1331,                 // where the haze turns into sea, on the right
+    focal: { landscape: [0.55, 0.5], portrait: [0.55, 0.5] },
+    sunSet: [0.995, 0.36], sunRise: [0.30, 0.0], sunArc: 0.12,   // it sets over the open sea, right of the pine
+    moon: [0.84, 0.13],
+    // tools/wide.py: a level horizon at row 503, a ~60 degree lens, 20 m above the water
+    camera: { f: 1663, cx: 960, cy: 665.5, pitch: 0.097406, height: 20 },
+    swell: [-0.7071, -0.7071],
+    objects: [[1739, 932, 1838, 1012], NONE, NONE],
+    boom: NONE,
+    foam: 0.12,
+    coast: { y: 499, x0: 1665, x1: 1915, up: 60 },
+    files: { maps: 'img/wide/maps.png', sky: 'img/wide/sky.png', fill: 'img/wide/skyfill.png', plate: 'img/wide/plate.webp',
+             seabed: 'img/wide/seabed.webp', sea: 'img/wide/sea.png', objects: 'img/wide/objects.webp', leaves: 'img/wide/leaftex.webp',
+             rig: 'img/wide/rig.json' },
+    lights: [
+      // pink villa: the tower, the arched window, the loggia, the floors below
+      [480,447,9,0],[220,555,11,0],[331,572,11,0],[384,572,13,0],[438,572,11,0],[480,572,10,0],[548,570,9,0],
+      [374,690,12,0],[484,680,10,0],[540,690,8,0],[288,815,8,0],[376,830,11,0],[468,820,7,0],
+      // yellow villa, top to bottom
+      [880,428,5,0],[897,428,5,0],[914,428,5,0],[963,428,6,0],[1035,428,7,0],[1088,428,6,0],[1180,425,8,0],[1286,425,8,0],
+      [1053,556,9,0],[1130,560,12,0],[1190,538,8,0],[1231,538,8,0],[1302,530,10,0],
+      [1040,650,14,0],[1130,655,9,0],[1188,655,9,0],[1232,655,9,0],[1288,655,9,0],[1357,640,12,0],
+      [906,760,10,0],[1067,748,6,0],[1402,762,11,0],[892,860,9,0],[933,860,9,0],
+      // lamps on the terraces and along the arches
+      [960,700,4,1],[1280,700,4,1],[1460,760,4,1],[620,905,4,1]
+    ]
+  }
 };
+const PICK = QS.get('photo') === 'wide' || QS.get('photo') === 'tall' ? QS.get('photo') : (innerWidth > innerHeight ? 'wide' : 'tall');
+const SCENE = SCENES[PICK];
+const LIGHT_PX = SCENE.lights.slice();
 // a photo pixel -> the direction the camera looks along it (x right, y away, z up)
 function camRay(px, py){
   const c = SCENE.camera, u = (px - c.cx)/c.f, v = (py - c.cy)/c.f, cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
@@ -65,30 +125,16 @@ function camRay(px, py){
   return d.map(x => x/n);
 }
 
-// lit windows and lamps, in photo pixels: [x, y, radius px, kind] (0 warm window, 1 lamp, 2 far coast)
-const LIGHT_PX = [
-  // pink villa
-  [241,335,3.2,0],[101,389,3.4,0],[157,392,3.2,0],[185,392,3.2,0],[213,392,3.2,0],[241,392,3.4,0],[280,392,2.8,0],
-  [110,452,3.4,0],[180,450,3.4,0],[240,447,3.4,0],[276,440,2.6,0],[180,520,3.2,0],[130,522,3,0],
-  // yellow villa
-  [462,331,2.6,0],[480,331,2.6,0],[502,331,2.6,0],[537,329,3,0],[567,330,3,0],[675,332,2.8,0],
-  [460,386,2.6,0],[500,386,2.8,0],[580,382,3,0],[612,384,3,0],[642,384,3,0],[675,382,3,0],[707,435,3,0],
-  [470,440,3.6,0],[536,442,4,0],[580,440,3.4,0],[610,440,3.2,0],[630,440,3.2,0],[652,440,3.2,0],
-  [470,487,3,0],[447,492,3,0],[732,500,2.8,0],
-  // the small castle
-  [375,500,2.8,0],[400,498,2.8,0],[450,547,3,0],[475,547,3,0],[412,557,3,0],[330,556,3.2,0],[362,556,3.2,0],
-  // lamps along the path and on the tower
-  [360,362,2.4,1],[594,160,2.2,1],[150,213,2,1],[780,494,2.2,1],[848,500,2.2,1]
-];
 // the far coast: a scatter of small lights along the shore and up the slopes
 {
   let s = 20260929;
   const rnd = () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s);
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0)/4294967296; };
+  const C = SCENE.coast;
   for (let i = 0; i < 34; i++){
-    const x = 912 + rnd()*172;
-    const up = rnd() < 0.25 ? 3 + rnd()*14 : rnd()*2;
-    LIGHT_PX.push([x, 371 - up, 0.55 + rnd()*0.35, 2]);
+    const x = C.x0 + rnd()*(C.x1 - C.x0);
+    const up = rnd() < 0.25 ? 3 + rnd()*C.up : rnd()*2;
+    LIGHT_PX.push([x, C.y - up, (0.55 + rnd()*0.35)*SCENE.w/1086, 2]);
   }
 }
 
@@ -118,6 +164,7 @@ uniform vec2 uAmp;                  // rms slope of the two wave textures
 uniform vec4 uSwK; uniform vec2 uSwW; uniform float uSwA;   // the long swell: two waves
 uniform vec3 uSunDir, uSunSpec, uMoonDir, uMoonSpec;
 uniform float uWind;                // m/s
+uniform float uFoam;                // how much the swell breaks on this photo's rocks (a close shore: less)
 uniform vec4 uObjBox[3];            // swimmer, boat, buoy: photo px boxes
 uniform vec4 uBoom;                 // the floating boom, from end to end (photo px)
 uniform vec3 uWB, uZenith, uHorizon, uGlow, uSunCol, uLift;
@@ -246,7 +293,8 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float expo, float aspect){
   vec2 qf = dirToImg(vec3(V.xy, -V.z)); qf.y = min(qf.y, uHorizonY - 0.003);
   col += fresnel(-V.z)*uSkyMix*(drawnSky(qf, aspect) - grade(texture(uFill, clamp(qf, vec2(0.001), vec2(0.999))).rgb));
   // the sun and the moon on the water; in daylight the steepest crests catch the sky too
-  col += (uSunSpec*lobe(N, V, uSunDir, rough) + uMoonSpec*lobe(N, V, uMoonDir, rough + 0.02))*F;
+  vec3 spec = (uSunSpec*lobe(N, V, uSunDir, rough) + uMoonSpec*lobe(N, V, uMoonDir, rough + 0.02))*F;
+  col += spec/(1.0 + 0.35*dot(spec, LUM));       // a glare that would burn out stays a path of glints
   float crest = (B.b + B2.b - 1.0)*4.24 + 0.4*(A.b - 0.5)*6.0;
   col += uSpark*smoothstep(2.7, 3.6, crest)*(1.0 - lostB)*clamp(uAmp.y/0.09, 0.4, 1.6);
 
@@ -261,6 +309,7 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float expo, float aspect){
   float patchK = smoothstep(0.45, 0.75, vnoise(X*0.32 + vec2(0.035, -0.02)*uSeaT));
   float dens = exp(-dShore/max(reach*(0.6 + 0.8*patchK), 0.05))*(0.15 + 0.85*expo)*pow(up, 1.5)*patchK;
   float lace = 0.5*(B.b + B2.b) + 0.5*vnoise(X*2.6 + vec2(0.11, 0.07)*uSeaT) + 0.25*(vnoise(X*7.0 - 0.2*uSeaT) - 0.5);
+  dens *= uFoam;
   float foam = clamp(dens*3.0, 0.0, 1.0)*smoothstep(0.6 - 0.15*dens, 0.78 - 0.15*dens, lace);
   foam += smoothstep(2.4, 3.2, (A.b - 0.5)*6.0 + 0.6*(B.b - 0.5)*6.0)*smoothstep(7.0, 14.0, uWind)*(1.0 - lostA)*0.7;
   col = mix(col, grade(vec3(0.80, 0.84, 0.86)), clamp(foam, 0.0, 1.0)*0.9);
@@ -272,14 +321,18 @@ vec3 water(vec2 q, vec2 ip, vec3 sea, float expo, float aspect){
 vec3 sideFill(vec2 q){
   float dx = q.x < 0.0 ? -q.x : max(q.x - 1.0, 0.0);              // photo widths outside the photo
   float mx = 1.0 - abs(1.0 - mod(q.x, 2.0)), my = clamp(q.y, 0.0, 1.0);
-  float r = 0.05 + 0.06*min(dx, 1.0);                              // blur radius, in photo widths
-  vec3 c = vec3(0.0);
-  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++){
-    vec2 t = vec2(mx + float(i)*r, my + float(j)*r*0.9);
-    t.x = 1.0 - abs(1.0 - mod(t.x, 2.0));                          // stay mirrored past the photo's edge
-    c += textureLod(uPlate, vec2(t.x, clamp(t.y, 0.0, 1.0)), 5.0).rgb;
+  // the photo's own colours, mirrored out from its edge and heavily blurred: a ring of samples
+  // on its coarsest levels, turned per pixel so no grid shows; only the light and the colours
+  // remain, no shapes
+  float r = 0.06 + 0.08*min(dx, 1.0), a0 = 6.2832*fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  vec3 c = textureLod(uPlate, vec2(mx, my), 7.0).rgb;
+  for (int i = 0; i < 6; i++){
+    float a = a0 + float(i)*1.0472;
+    vec2 t = vec2(mx + cos(a)*r, my + sin(a)*r*1.1);
+    t.x = 1.0 - abs(1.0 - mod(t.x, 2.0));
+    c += textureLod(uPlate, vec2(t.x, clamp(t.y, 0.0, 1.0)), 7.0).rgb;
   }
-  return grade(c/9.0)*(0.88 - 0.42*min(dx, 1.0))*(1.0 - 0.6*uNight);   // darker still at night, like the sky it borrows from
+  return grade(c/7.0)*(0.97 - 0.5*smoothstep(0.0, 0.35, dx))*(1.0 - 0.6*uNight);
 }
 void finish(vec3 col, vec2 s){
   // gentle highlight shoulder: the photo stays itself at noon
@@ -932,7 +985,7 @@ function frame(now){
   if (el > -4){
     const set = !L.sun.rising, P = set ? SCENE.sunSet : SCENE.sunRise;
     const k = Math.max(0, el)/12;
-    sunPos = [P[0] - (set ? 0.25 : -0.2)*Math.min(1, k), SCENE.horizonY - 0.012*el];
+    sunPos = [P[0] - (set ? SCENE.sunArc || 0.25 : -0.2)*Math.min(1, k), SCENE.horizonY - 0.012*el*SCENE.h/1200];
     sunVis = smooth(-4, 0, el)*(1 - smooth(8, 18, el));
   }
   const night = smooth(-4, -12, el);
@@ -960,6 +1013,7 @@ function frame(now){
   gl.uniform2f(U.uSwW, SWELL[0].w, SWELL[1].w);
   gl.uniform1f(U.uSwA, 0.12 + 0.025*Math.min(wind, 12));
   gl.uniform1f(U.uWind, wind);
+  gl.uniform1f(U.uFoam, SCENE.foam);
   gl.uniform4fv(U.uObjBox, SCENE.objects.flat());
   gl.uniform4fv(U.uBoom, SCENE.boom);
   // the sun goes round: up behind the hill on the left, behind the camera at noon, down over the
@@ -1070,6 +1124,17 @@ window.addEventListener('message', e => {
   }
 });
 
+// turned over (a tablet, a resized window): the other photo; a height that only shrank (keyboard) is not a turn
+if (!QS.has('photo')){
+  let lw = innerWidth, lh = innerHeight, turnTimer = 0;
+  addEventListener('resize', () => {
+    const w = innerWidth, h = innerHeight;
+    if (!(IS_PHONE && w === lw && h < lh)){ lw = w; lh = h; }
+    clearTimeout(turnTimer);
+    turnTimer = setTimeout(() => { if ((lw > lh ? 'wide' : 'tall') !== PICK) location.reload(); }, 400);
+  });
+}
+
 // test hooks: render a given hour and moment deterministically; read the canvas size and pace
 window.__scene = {
   set(hour, t, wind, motion){
@@ -1079,16 +1144,16 @@ window.__scene = {
     if (motion !== undefined) state.motion = motion;
     frame(performance.now());
   },
-  info: () => ({ canvas: canvas.width + 'x' + canvas.height, quality, interval: Math.round(interval), lights: lights.length, drawn })
+  info: () => ({ photo: PICK, canvas: canvas.width + 'x' + canvas.height, quality, interval: Math.round(interval), lights: lights.length, drawn })
 };
 
 try {
   // the rig is a file on the site; the single-file build puts the object itself here instead
-  const rigSrc = 'img/rig.json';
+  const fl = SCENE.files;
   const [maps, sky, fill, plate, seabed, sea, objects, leafRGB, rig] = await Promise.all([
-    loadImage('img/maps.png'), loadImage('img/sky.png'), loadImage('img/skyfill.png'), loadImage(SCENE.plate),
-    loadImage('img/seabed.webp'), loadImage('img/sea.png'), loadImage('img/objects.webp'), loadImage('img/leaftex.webp'),
-    typeof rigSrc === 'string' ? fetch(rigSrc).then(r => r.json()) : rigSrc]);
+    loadImage(fl.maps), loadImage(fl.sky), loadImage(fl.fill), loadImage(fl.plate),
+    loadImage(fl.seabed), loadImage(fl.sea), loadImage(fl.objects), loadImage(fl.leaves),
+    typeof fl.rig === 'string' ? fetch(fl.rig).then(r => r.json()) : fl.rig]);
   gl.useProgram(prog);
   texture(4, plate, {srgb: true, mips: true}); gl.uniform1i(U.uPlate, 4);
   texture(1, maps); gl.uniform1i(U.uMaps, 1);

@@ -24,11 +24,12 @@ const must = (cond, msg) => { if (!cond) throw new Error('bundle: ' + msg); };
 // the scene: every 'img/...' it loads becomes a data: URI
 let scene = read('scene.html');
 // the leaves' rig goes in as the object itself (a fetch of a data: URI would be refused)
-must(scene.includes("'img/rig.json'"), 'scene.html no longer loads img/rig.json');
-scene = scene.replace("'img/rig.json'", () => JSON.stringify(JSON.parse(read('img/rig.json'))));
+let nr = 0;
+scene = scene.replace(/'(img\/(?:wide\/)?rig\.json)'/g, (_, f) => { nr++; return JSON.stringify(JSON.parse(read(f))); });
+must(nr === 2, `expected the two photos' rigs in scene.html, found ${nr}`);
 let n = 0;
-scene = scene.replace(/'(img\/[\w.-]+)'/g, (_, f) => { n++; return `'${dataUri(f)}'`; });
-must(n >= 8, `expected at least 8 images in scene.html, found ${n}`);
+scene = scene.replace(/'(img\/[\w.\/-]+)'/g, (_, f) => { n++; return `'${dataUri(f)}'`; });
+must(n >= 16, `expected at least 16 images (8 per photo) in scene.html, found ${n}`);
 // it travels inside a <script type="text/plain">: nothing in it may end or re-open a script there
 must(!/<\\(\/?script|!--)/i.test(scene), 'scene.html already contains an escaped script tag');
 const sceneText = scene.replace(/<(\/?script|!--)/gi, '<\\$1');
@@ -39,8 +40,8 @@ let nf = 0;
 page = page.replace(/url\((fonts\/[\w.-]+)\)/g, (_, f) => { nf++; return `url(${dataUri(f)})`; });
 must(nf >= 7, `expected 7 fonts, found ${nf}`);
 let ni = 0;
-page = page.replace(/url\((img\/[\w.-]+)\)/g, (_, f) => { ni++; return `url(${dataUri(f)})`; });
-must(ni >= 1, 'the poster is gone from index.html');
+page = page.replace(/url\((img\/[\w.\/-]+)\)/g, (_, f) => { ni++; return `url(${dataUri(f)})`; });
+must(ni >= 2, 'a poster is gone from index.html');
 
 // astro.js: same code, wrapped so its names cannot meet the page's
 const astro = read('astro.js').replace(/^export /gm, '');

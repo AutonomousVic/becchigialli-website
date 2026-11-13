@@ -2,6 +2,8 @@
 
 Il sito di Becchigialli Holding Immobiliare, sul modello di vittoriodini.it: una caletta di Paraggi che segue l'ora di chi visita, un pannello di vetro con la password e, dietro, il menu.
 
+Le foto sono due, delle stesse ville: una verticale (`source/caletta.jpg`) per il telefono e gli schermi più alti che larghi, una orizzontale (`source/ville.jpg`) per gli schermi più larghi che alti. La scena carica solo quella che serve, e se il tablet si gira passa all'altra. Su uno schermo più largo della foto, la foto si vede intera e centrata, con i lati riempiti dai suoi colori sfumati. `?photo=tall` o `?photo=wide` sceglie a mano.
+
 **Stato: anteprima.** Scena, luce dell'ora, "Cambia il meteo" (ora, vento, movimento), sblocco e menu con contenuti di riempimento.
 
 | File | A cosa serve |
@@ -13,15 +15,15 @@ Il sito di Becchigialli Holding Immobiliare, sul modello di vittoriodini.it: una
 | `img/` | La foto e le sue mappe (vedi sotto) |
 | `fonts/` | Cormorant Garamond e Inter Tight, ospitati sul sito (licenza OFL) |
 | `_headers` | Per Cloudflare Pages: font e immagini restano in cache nel browser |
-| `source/` | La foto originale, da cui `tools/maps.py` ricava `img/` |
+| `source/` | Le due foto originali: `caletta.jpg` (verticale) e `ville.jpg` (orizzontale) |
 | `tools/` | Mappe della foto, file unico, impronta della password, screenshot e video di prova |
 
-Le immagini in `img/`:
+Le immagini in `img/` (foto verticale; quelle della foto orizzontale, con gli stessi nomi, sono in `img/wide/`):
 
 | File | Cosa contiene |
 | :-- | :-- |
 | `plate.webp` | La foto, con i rami in primo piano tolti e il mare ricostruito dietro |
-| `leafrgb.webp`, `leaf.png` | I rami in primo piano: colore e trasparenza |
+| `leaftex.webp`, `rig.json` | I rami e i cespugli in primo piano: il loro colore, e scheletro e foglie da disegnare |
 | `maps.png` | A metà risoluzione: profondità (R), quanto si muovono i rami (G), quanto ogni scoglio prende l'onda (B) |
 | `sky.png`, `skyfill.png` | Dove c'è cielo, e il cielo da mettere dietro le colline |
 | `poster.webp` | Una copia leggera della foto, mostrata finché la scena non è pronta |
@@ -45,7 +47,9 @@ La camera è ferma e la costa resta la foto. Il mare è ricostruito: il colore �
 
 ```bash
 pip install numpy opencv-python-headless
-python3 tools/sea.py       # rifà anche le mappe di tools/maps.py; legge source/caletta.jpg, scrive img/ e i controlli in tools/out/
+python3 tools/sea.py       # foto verticale: mappe, mare (rifà anche tools/maps.py), in img/
+python3 tools/foliage.py   # foto verticale: rami e foglie, in img/
+python3 tools/wide.py      # foto orizzontale: tutto, in img/wide/
 ```
 
 ## Il file unico
@@ -59,7 +63,7 @@ Font e immagini diventano dati dentro la pagina. La scena va in fondo al file e 
 
 ## Pubblicare su Cloudflare Pages
 
-Carica la cartella con `index.html`, `scene.html`, `astro.js`, `content.json`, `img/`, `fonts/` e `_headers`. Il file `_headers` deve stare nella radice, accanto a `index.html`.
+Carica la cartella con `index.html`, `scene.html`, `astro.js`, `content.json`, `img/` (con `img/wide/`), `fonts/` e `_headers`. Non servono `img/leaf.png` e `img/leafrgb.webp`: sono solo materiale di partenza per gli strumenti. Il file `_headers` deve stare nella radice, accanto a `index.html`.
 
 ## Cambiare la password
 
